@@ -2,7 +2,7 @@
 
 Draft for review. Nothing here is submitted.
 
-**Still needed from Arun:** current city (City, Country).
+All fields answered. Nothing submitted yet.
 
 ---
 
@@ -95,7 +95,7 @@ is exactly the problem Interlock is built on.
 
 ## Where do the team members currently work?
 
-`[NEEDED - City, Country]`
+Bangalore, India
 
 ## If accepted to the program, would you be willing to work primarily onsite in London during the program?
 
