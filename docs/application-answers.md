@@ -2,8 +2,7 @@
 
 Draft for review. Nothing here is submitted.
 
-**Still needed from Arun:** Telegram handle · X handle (or confirm: leave blank) ·
-current city.
+**Still needed from Arun:** current city (City, Country).
 
 ---
 
@@ -27,7 +26,10 @@ contact@arunbrahma.com
 
 ## Telegram Handle
 
-`[NEEDED - required field]`
+No Telegram - best reached at contact@arunbrahma.com
+
+*(Field is required by the form but unvalidated, so this passes. Arun does not use
+Telegram.)*
 
 ## What category best describes your project?
 
@@ -60,8 +62,8 @@ suits the investor syndicate better.
 ## Team Details
 
 **Arun Brahma** - Founder (CEO/CTO)
-X: `[NEEDED or leave blank]`
-Telegram: `[NEEDED]`
+X: none
+Telegram: none - reachable at contact@arunbrahma.com
 LinkedIn: https://linkedin.com/in/iamarunbrahma
 GitHub: https://github.com/iamarunbrahma
 ENS: none
