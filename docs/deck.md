@@ -189,7 +189,7 @@ being found out later.
 - **Carelon** - hybrid RAG (Qdrant + BM25) over health insurance policy documents. +23%
   customer satisfaction.
 - **Open source** - ~1,050 GitHub stars across four projects: vision-parse (481),
-  finetuned-qlora-falcon7b-medical (261), pdf-to-markdown (204), purr (106).
+  finetuned-qlora-falcon7b-medical (261), pdf-to-markdown (204), purr (105).
 
 Intent routing and instruction provenance are ML problems, not crypto problems. That is
 the ground I already stand on.
