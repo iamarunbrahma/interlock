@@ -35,6 +35,8 @@ consistency. Off by default; only sees what layers 1 and 2 could not settle.
 Every decision is signed with Ed25519, the same curve Solana uses, producing a
 verifiable trace.
 
+![Interlock denying an injected payment](docs/img/denied.png)
+
 ## Run it
 
 ```bash
