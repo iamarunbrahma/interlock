@@ -38,12 +38,12 @@ verifiable trace.
 ## Run it
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 python -m demo.run_attack
 ```
 
-`requirements.txt` is the runtime dependency only (`cryptography`). For the tests and
-the MCP server, install `requirements-dev.txt` instead.
+The only runtime dependency is `cryptography`. `requirements-dev.txt` adds `pytest`
+and `mcp` for the tests and the MCP server.
 
 Two scenarios run against the engine. The clean payment is allowed. The injected one
 is denied - even though it passes every deterministic check: the recipient is
@@ -53,14 +53,13 @@ the instruction chain redirected it, and that is only visible in the provenance 
 Tests:
 
 ```bash
-pip install -r requirements-dev.txt
 python -m pytest
 ```
 
 The landing page and its endpoint, locally:
 
 ```bash
-python dev_server.py   # http://localhost:8000
+python app.py   # http://localhost:8000
 ```
 
 ## Use it from an agent
