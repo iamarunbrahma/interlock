@@ -62,24 +62,52 @@ produces an artifact you can point at when asked who approved a loss.
 A policy and authorization layer between an agent and its wallet. Per payment, it
 decides whether settlement may proceed.
 
-Checks:
-1. **Intent-to-payment consistency.** Does this transfer match the intent the human
-   authorized? (Semantic, not rule-based. The core ML problem.)
-2. **Counterparty.** Is the recipient known, allowlisted, or previously seen?
-3. **Limits.** Per-transaction caps, velocity, cumulative spend against mandate.
-4. **Instruction provenance.** Is the instruction chain that produced this payment
-   contaminated by injected content from an untrusted source?
+An authorization decision sits inline in the payment path, so it must be cheap and
+fast enough to price per decision. That rules out a model call per payment as the
+primary mechanism. The checks are layered accordingly, cheapest first.
+
+**Layer 1 - deterministic.** Counterparty allowlist, per-payment cap, cumulative
+budget, currency and chain match. Microseconds.
+
+**Layer 2 - provenance (information-flow analysis).** The agent's instruction chain
+is modelled as typed steps, each carrying a trust level: `principal` (the human),
+`tool` (trusted structured tool output), `content` (untrusted fetched content),
+`agent` (the agent's own step). Trusted tool steps may carry a structured plan hint
+(recipient, amount) - what a real tool integration returns. Three rules fire:
+
+- `override_language` - an untrusted step contains imperative text directed at the
+  agent (ignore previous, new instructions, instead send, override).
+- `plan_divergence` - the payment's recipient or amount differs from the last
+  trusted plan, and an untrusted step intervened between that plan and the payment.
+- `concealment` - untrusted content instructs the agent not to disclose a step.
+
+This is taint tracking applied to payments. No model, no network, no secrets.
+
+**Layer 3 - semantic escalation (optional).** A `ClaudeAssessor` that judges
+intent-to-payment consistency with a model. Present in the codebase, off by default,
+enabled when an API key is configured.
 
 Output: allow or deny, with a signed, auditable reasoning trace.
 
 Integration surface: an MCP server, so an agent wires it in one call. Also a plain
 HTTP `POST /authorize`.
 
+### Known limitation
+
+Layer 2 catches attacks that are structurally visible - a redirected payment, an
+injected imperative, a concealment instruction. It will not catch a payment that is
+structurally clean but semantically wrong: an allowlisted merchant, the right
+amount, for the wrong thing. That is what layer 3 is for, and the deck states this
+plainly rather than implying the heuristics are complete.
+
 ## Business model
 
 Priced per authorization decision and on risk reduction. Explicitly **not** a
 percentage of payment value. This means revenue does not wait on agent payment
 volume becoming real, which is the viability point their thesis makes.
+
+Per-decision pricing only works if a decision is nearly free to produce. That is
+the reason the architecture is layered the way it is, not an afterthought.
 
 ## Target users
 
@@ -132,8 +160,10 @@ the OSS track record, and production multi-agent experience at Walmart scale.
 
 ## Success criteria
 
-- Injected run denied, clean run allowed, both reproducible from the repo.
-- Landing page live on a public URL with the demo callable from the browser.
+- Injected run denied, clean run allowed, both reproducible from the repo with no
+  API key, no account, and no network: `pip install -r requirements.txt && pytest`.
+- Landing page live on a public URL with the demo callable from the browser, and
+  deployable with zero secrets configured.
 - Deck exported to PDF.
 - Every form field has an answer; no field contains a fabricated fact.
 - Submitted before end of 14 Sept 2026 (deadline has no stated timezone).
