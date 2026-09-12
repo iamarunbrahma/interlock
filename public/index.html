@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interlock - authorization for agent payments</title>
+<meta name="description" content="The authorization layer that decides whether an AI agent's payment is allowed to settle.">
+<style>
+  :root {
+    --bg:      #08080a;
+    --surface: #0f0f12;
+    --raised:  #141418;
+    --line:    #222228;
+    --line-2:  #2e2e36;
+    --text:    #f2f2f4;
+    --mid:     #9a9aa4;
+    --dim:     #63636d;
+    --ok:      #4ade80;
+    --no:      #ff6b5f;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { color-scheme: dark; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.65 var(--sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .wrap { width: 100%; max-width: 1040px; margin: 0 auto; padding-inline: 24px; }
+  a { color: inherit; text-decoration: none; border-bottom: 1px solid var(--line-2); }
+  a:hover { border-bottom-color: var(--mid); }
+
+  /* ---------- masthead ---------- */
+  .masthead {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-block: 22px; border-bottom: 1px solid var(--line);
+  }
+  .wordmark { font-family: var(--mono); font-size: 13px; font-weight: 600; letter-spacing: .04em; }
+  .wordmark b { color: var(--text); font-weight: 600; }
+  .masthead a { font-size: 13px; color: var(--mid); border: none; }
+  .masthead a:hover { color: var(--text); }
+
+  /* ---------- hero ---------- */
+  .hero { padding-block: 84px 56px; }
+  .hero h1 {
+    font-size: clamp(34px, 6.4vw, 62px);
+    line-height: 1.02;
+    letter-spacing: -.035em;
+    font-weight: 600;
+    margin: 0 0 26px;
+    max-width: 15ch;
+  }
+  .hero h1 em { font-style: normal; color: var(--dim); }
+  .hero p { font-size: clamp(15px, 2vw, 17.5px); color: var(--mid); margin: 0; max-width: 56ch; }
+
+  /* ---------- console ---------- */
+  .console {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 96px;
+  }
+  .bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 13px 18px;
+    background: var(--raised);
+    border-bottom: 1px solid var(--line);
+    font-family: var(--mono); font-size: 12px;
+  }
+  .bar .id { color: var(--dim); }
+  .bar .id b { color: var(--mid); font-weight: 400; }
+  .chip {
+    font-size: 11px; font-weight: 700; letter-spacing: .09em;
+    padding: 3px 9px; border-radius: 2px;
+    border: 1px solid var(--line-2); color: var(--dim);
+    white-space: nowrap;
+  }
+  .chip.ok { color: var(--ok); border-color: rgba(74,222,128,.45); background: rgba(74,222,128,.08); }
+  .chip.no { color: var(--no); border-color: rgba(255,107,95,.45); background: rgba(255,107,95,.08); }
+
+  .mandate { padding: 18px; border-bottom: 1px solid var(--line); }
+  .row { display: flex; gap: 14px; font-family: var(--mono); font-size: 12.5px; padding: 3px 0; }
+  .row dt { flex: none; width: 74px; color: var(--dim); }
+  .row dd { margin: 0; color: var(--mid); min-width: 0; word-break: break-word; }
+  .row dd b { color: var(--text); font-weight: 400; }
+  dl { margin: 0; }
+
+  .actions { display: flex; gap: 8px; padding: 16px 18px; flex-wrap: wrap; }
+  button {
+    font: 500 13.5px/1 var(--sans);
+    padding: 10px 16px;
+    border-radius: 3px;
+    border: 1px solid var(--line-2);
+    background: transparent;
+    color: var(--mid);
+    cursor: pointer;
+    transition: color .12s, border-color .12s, background .12s;
+  }
+  button:hover:not(:disabled) { color: var(--text); border-color: var(--mid); }
+  button.primary { color: var(--text); border-color: var(--line-2); background: var(--raised); }
+  button.primary:hover:not(:disabled) { border-color: var(--no); color: var(--no); }
+  button:disabled { opacity: .35; cursor: default; }
+
+  .stage { padding: 22px 18px 26px; min-height: 132px; }
+  .idle {
+    font-family: var(--mono); font-size: 12.5px; color: var(--dim);
+    display: flex; align-items: center; min-height: 86px;
+  }
+  .err { font-family: var(--mono); font-size: 12.5px; color: var(--no); }
+
+  .lead { color: var(--mid); font-size: 14px; margin: 0 0 22px; max-width: 66ch; }
+
+  .head {
+    font-family: var(--mono); font-size: 11px; color: var(--dim);
+    letter-spacing: .04em; margin: 26px 0 10px;
+    padding-bottom: 7px; border-bottom: 1px solid var(--line);
+  }
+  .head:first-child { margin-top: 0; }
+
+  /* ---------- trace ---------- */
+  .step { display: flex; gap: 0; font-family: var(--mono); font-size: 12px; }
+  .gutter {
+    flex: none; width: 84px; padding: 7px 12px 7px 0;
+    color: var(--dim); font-size: 10.5px; letter-spacing: .06em;
+    text-align: right; border-right: 1px solid var(--line);
+  }
+  .body { padding: 7px 0 7px 14px; min-width: 0; border-left: 2px solid transparent; margin-left: -1px; }
+  .step.hot .gutter { color: var(--no); }
+  .step.hot .body { border-left-color: var(--no); background: rgba(255,107,95,.045); padding-left: 12px; }
+  .src { color: var(--mid); }
+  .step.hot .src { color: var(--no); }
+  .txt { color: var(--dim); word-break: break-word; margin-top: 2px; }
+
+  /* ---------- checks ---------- */
+  .check { display: flex; gap: 12px; padding: 6px 0; font-family: var(--mono); font-size: 12px; align-items: baseline; }
+  .flag { flex: none; width: 34px; font-size: 10px; font-weight: 700; letter-spacing: .06em; }
+  .flag.y { color: var(--ok); }
+  .flag.n { color: var(--no); }
+  .cname { flex: none; width: 168px; color: var(--text); }
+  .cdetail { color: var(--dim); min-width: 0; word-break: break-word; }
+
+  .sig { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line);
+         font-family: var(--mono); font-size: 11px; color: var(--dim); line-height: 1.8; word-break: break-all; }
+
+  /* ---------- pipeline ---------- */
+  section { padding-block: 0 90px; }
+  h2 { font-size: 21px; letter-spacing: -.02em; font-weight: 600; margin: 0 0 10px; }
+  section > p { color: var(--mid); max-width: 62ch; margin: 0 0 30px; }
+  .pipe { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 4px; }
+  .stage-box { background: var(--surface); padding: 22px 20px; display: flex; flex-direction: column; }
+  .stage-box .n { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-bottom: 12px; }
+  .stage-box h3 { font-size: 15px; margin: 0 0 8px; font-weight: 600; letter-spacing: -.01em; }
+  .stage-box p { font-size: 13.5px; color: var(--mid); margin: 0 0 16px; line-height: 1.6; flex: 1; }
+  .tag { font-family: var(--mono); font-size: 10.5px; color: var(--dim); border: 1px solid var(--line-2); border-radius: 2px; padding: 2px 7px; align-self: flex-start; }
+  .stage-box.off { background: #0c0c0f; }
+  .stage-box.off h3, .stage-box.off .n { color: var(--dim); }
+
+  /* ---------- incidents ---------- */
+  .incidents { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 4px; }
+  .inc { background: var(--surface); padding: 24px 22px; }
+  .inc .when { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-bottom: 10px; }
+  .inc .amt { font-size: 25px; letter-spacing: -.02em; font-weight: 600; margin-bottom: 8px; }
+  .inc p { font-size: 13.5px; color: var(--mid); margin: 0 0 10px; line-height: 1.6; }
+  .inc cite { font-family: var(--mono); font-size: 11px; color: var(--dim); font-style: normal; }
+
+  .limit { border-left: 2px solid var(--line-2); padding-left: 20px; max-width: 62ch; }
+  .limit h2 { margin-bottom: 8px; }
+  .limit p { color: var(--mid); margin: 0; }
+
+  footer { border-top: 1px solid var(--line); padding-block: 26px 56px; color: var(--dim); font-size: 12.5px; }
+
+  @media (max-width: 820px) {
+    .pipe, .incidents { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 620px) {
+    .wrap { padding-inline: 18px; }
+    .hero { padding-block: 56px 40px; }
+    .cname { width: auto; }
+    .check { flex-wrap: wrap; }
+    .cdetail { width: 100%; padding-left: 46px; }
+    .gutter { width: 64px; padding-right: 10px; }
+    .row { flex-direction: column; gap: 1px; }
+    .row dt { width: auto; }
+    .actions button { flex: 1 1 auto; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark"><b>interlock</b></div>
+    <a href="https://github.com/iamarunbrahma/interlock">source</a>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>Agents can pay. <em>Nobody decides if they should.</em></h1>
+    <p>
+      Interlock is the authorization layer between an agent and its wallet. It decides,
+      per payment, whether settlement may proceed - and signs the reason.
+    </p>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="console">
+    <div class="bar">
+      <div class="id">mandate <b>m_travel_001</b></div>
+      <div class="chip" id="chip">IDLE</div>
+    </div>
+
+    <div class="mandate">
+      <dl>
+        <div class="row"><dt>intent</dt><dd><b>Book a one-way flight from Bangalore to London for under $600</b></dd></div>
+        <div class="row"><dt>limits</dt><dd>600 USDC per payment · 1200 USDC total · USDC on solana</dd></div>
+        <div class="row"><dt>allowlist</dt><dd>merchant.airline.example, merchant.agency.example</dd></div>
+      </dl>
+    </div>
+
+    <div class="actions">
+      <button id="run-clean">Run clean payment</button>
+      <button id="run-injected" class="primary">Run injected payment</button>
+    </div>
+
+    <div class="stage" id="stage">
+      <div class="idle">Run a payment to see the decision and its signed trace.</div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <section>
+    <h2>Static controls cannot see this</h2>
+    <p>
+      Both payments go to an allowlisted merchant, under the cap, on the right chain.
+      Wallet-level policy engines pass them both. The difference only shows up in where
+      the instruction came from.
+    </p>
+    <div class="pipe">
+      <div class="stage-box">
+        <div class="n">01</div>
+        <h3>Deterministic</h3>
+        <p>Counterparty allowlist, per-payment cap, cumulative budget, currency and chain.</p>
+        <span class="tag">microseconds</span>
+      </div>
+      <div class="stage-box">
+        <div class="n">02</div>
+        <h3>Provenance</h3>
+        <p>Taint tracking for payments. Every step carries a trust level; we fire when untrusted content overrides, redirects, or asks to be concealed.</p>
+        <span class="tag">microseconds</span>
+      </div>
+      <div class="stage-box off">
+        <div class="n">03</div>
+        <h3>Semantic</h3>
+        <p>A model judges intent-to-payment consistency. Only sees what the cheap layers could not settle.</p>
+        <span class="tag">optional · off here</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Why this keeps happening</h2>
+    <div class="incidents">
+      <div class="inc">
+        <div class="when">May 2026</div>
+        <div class="amt">~$200K</div>
+        <p>
+          A Morse-code prompt injection made Grok emit a transfer instruction. An automated
+          trading agent executed it on-chain before most of it was recovered.
+        </p>
+        <cite>SlowMist</cite>
+      </div>
+      <div class="inc">
+        <div class="when">February 2026</div>
+        <div class="amt">$1.78M</div>
+        <p>
+          An oracle bug in AI-assisted contract code triggered a bad debt event on Moonwell.
+          AI, human reviewers and a governance vote all signed off. Nothing caught it.
+        </p>
+        <cite>rekt.news</cite>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Priced per decision</h2>
+    <p style="margin-bottom:0">
+      Per authorization decision and on risk reduction - never a percentage of payment
+      value. That only works if a decision is nearly free to produce, which is why the
+      layers are ordered the way they are. An authorization layer that costs a model call
+      per payment cannot sit inline in a checkout.
+    </p>
+  </section>
+
+  <section>
+    <div class="limit">
+      <h2>What it does not catch yet</h2>
+      <p>
+        Provenance analysis catches what is structurally visible. It will not catch a
+        payment that is structurally clean but semantically wrong - the right merchant,
+        the right amount, for the wrong thing. That is layer 03, and it is next.
+      </p>
+    </div>
+  </section>
+
+</div>
+
+<div class="wrap">
+  <footer>Decisions are real. Settlement is simulated - no funds move.</footer>
+</div>
+
+<script>
+const stage  = document.getElementById('stage');
+const chip   = document.getElementById('chip');
+const btns   = [document.getElementById('run-clean'), document.getElementById('run-injected')];
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function setChip(text, cls) {
+  chip.textContent = text;
+  chip.className = 'chip' + (cls ? ' ' + cls : '');
+}
+
+function render(d) {
+  const s = d.scenario;
+  setChip(d.allowed ? 'ALLOWED' : 'DENIED', d.allowed ? 'ok' : 'no');
+
+  const trace = s.instruction_chain.map((step) => {
+    const hot = step.trust === 'content';
+    return '<div class="step' + (hot ? ' hot' : '') + '">' +
+             '<div class="gutter">' + esc(step.trust) + '</div>' +
+             '<div class="body">' +
+               '<div class="src">' + esc(step.source) + '</div>' +
+               '<div class="txt">' + esc(step.content) + '</div>' +
+             '</div>' +
+           '</div>';
+  }).join('');
+
+  const checks = d.checks.map((c) =>
+    '<div class="check">' +
+      '<span class="flag ' + (c.passed ? 'y' : 'n') + '">' + (c.passed ? 'PASS' : 'FAIL') + '</span>' +
+      '<span class="cname">' + esc(c.name) + '</span>' +
+      '<span class="cdetail">' + esc(c.detail) + '</span>' +
+    '</div>').join('');
+
+  stage.innerHTML =
+    '<p class="lead">' + esc(s.description) + '</p>' +
+    '<div class="head">proposed payment</div>' +
+    '<dl>' +
+      '<div class="row"><dt>to</dt><dd><b>' + esc(s.recipient) + '</b></dd></div>' +
+      '<div class="row"><dt>amount</dt><dd><b>' + esc(s.amount) + ' ' + esc(s.currency) + '</b> on ' + esc(s.chain) + '</dd></div>' +
+      '<div class="row"><dt>memo</dt><dd>' + esc(s.memo) + '</dd></div>' +
+    '</dl>' +
+    '<div class="head">instruction chain</div>' + trace +
+    '<div class="head">checks</div>' + checks +
+    '<div class="sig">' +
+      'signature &nbsp;' + esc(d.signature.slice(0, 64)) + '…<br>' +
+      'public key ' + esc(d.public_key.slice(0, 64)) + '…<br>' +
+      'issued &nbsp;&nbsp;&nbsp;&nbsp;' + esc(d.issued_at) +
+    '</div>';
+}
+
+async function run(scenario) {
+  btns.forEach((b) => b.disabled = true);
+  setChip('EVALUATING', '');
+  stage.innerHTML = '<div class="idle">Evaluating ' + esc(scenario) + ' payment…</div>';
+  try {
+    const res = await fetch('/api/authorize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenario })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setChip('ERROR', 'no');
+      stage.innerHTML = '<p class="err">' + esc(data.error || 'request failed: ' + res.status) + '</p>';
+    } else {
+      render(data);
+    }
+  } catch (e) {
+    setChip('ERROR', 'no');
+    stage.innerHTML = '<p class="err">could not reach the authorization endpoint: ' + esc(e.message) + '</p>';
+  } finally {
+    btns.forEach((b) => b.disabled = false);
+  }
+}
+
+document.getElementById('run-clean').addEventListener('click', () => run('clean'));
+document.getElementById('run-injected').addEventListener('click', () => run('injected'));
+</script>
+</body>
+</html>
