@@ -42,6 +42,9 @@ pip install -r requirements.txt
 python -m demo.run_attack
 ```
 
+`requirements.txt` is the runtime dependency only (`cryptography`). For the tests and
+the MCP server, install `requirements-dev.txt` instead.
+
 Two scenarios run against the engine. The clean payment is allowed. The injected one
 is denied - even though it passes every deterministic check: the recipient is
 allowlisted, the amount is under the cap, the chain is right. A poisoned web page in
@@ -50,6 +53,7 @@ the instruction chain redirected it, and that is only visible in the provenance 
 Tests:
 
 ```bash
+pip install -r requirements-dev.txt
 python -m pytest
 ```
 
