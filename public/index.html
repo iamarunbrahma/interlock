@@ -122,6 +122,21 @@
   }
   .head:first-child { margin-top: 0; }
 
+  .modes { display: flex; border-bottom: 1px solid var(--line); }
+  .mode { border: none; border-radius: 0; padding: 12px 18px; border-bottom: 2px solid transparent; }
+  .mode.on { color: var(--text); border-bottom-color: var(--text); }
+  .keyrow { padding: 16px 18px 0; }
+  .keyrow label { display: block; font-family: var(--mono); font-size: 11px; color: var(--dim); margin-bottom: 6px; }
+  .keyrow input {
+    width: 100%; max-width: 440px; font: 13px var(--mono); padding: 9px 11px;
+    background: var(--bg); color: var(--text); border: 1px solid var(--line-2); border-radius: 3px;
+  }
+  .note { padding: 12px 18px 0; margin: 0; color: var(--dim); font-size: 13px; max-width: 72ch; }
+  .settle { font-family: var(--mono); font-size: 12px; color: var(--mid); word-break: break-word; }
+  .settle .y { color: var(--ok); }
+  .settle .n { color: var(--no); }
+  .verify { margin-top: 14px; }
+
   /* ---------- trace ---------- */
   .step { display: flex; gap: 0; font-family: var(--mono); font-size: 12px; }
   .gutter {
@@ -224,13 +239,39 @@
       </dl>
     </div>
 
-    <div class="actions">
-      <button id="run-clean">Run clean payment</button>
-      <button id="run-injected" class="primary">Run injected payment</button>
+    <div class="modes" role="tablist">
+      <button class="mode on" id="mode-live" role="tab" aria-selected="true">Live agent</button>
+      <button class="mode" id="mode-replay" role="tab" aria-selected="false">Replay</button>
+    </div>
+
+    <div class="keyrow">
+      <label for="key">Gemini API key - required for Live, optional for Replay (turns on layer 03)</label>
+      <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="paste your key">
+    </div>
+    <p class="note">
+      Your key is sent with the request, used for that run only, and never stored or logged.
+      <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free key</a>.
+    </p>
+
+    <div id="panel-live">
+      <p class="note">A real Gemini agent searches fares, gets a quote, reads the fare's listing page and asks to pay. Interlock decides on what it actually did.</p>
+      <div class="actions">
+        <button data-live="honest">Honest listing</button>
+        <button data-live="poisoned" class="primary">Poisoned listing</button>
+      </div>
+    </div>
+
+    <div id="panel-replay" hidden>
+      <p class="note">Scripted inputs, real decisions, real devnet settlement. No key needed.</p>
+      <div class="actions">
+        <button data-replay="clean">Clean payment</button>
+        <button data-replay="injected" class="primary">Injected payment</button>
+        <button data-replay="semantic">Wrong destination</button>
+      </div>
     </div>
 
     <div class="stage" id="stage">
-      <div class="idle">Run a payment to see the decision and its signed trace.</div>
+      <div class="idle">Run a payment to see the decision, its signed trace and the settlement.</div>
     </div>
   </div>
 </div>
@@ -257,11 +298,11 @@
         <p>Taint tracking for payments. Every step carries a trust level; we fire when untrusted content overrides, redirects, or asks to be concealed.</p>
         <span class="tag">microseconds</span>
       </div>
-      <div class="stage-box off">
+      <div class="stage-box">
         <div class="n">03</div>
         <h3>Semantic</h3>
         <p>A model judges intent-to-payment consistency. Only sees what the cheap layers could not settle.</p>
-        <span class="tag">optional · off here</span>
+        <span class="tag">optional · runs with your key</span>
       </div>
     </div>
   </section>
@@ -304,9 +345,10 @@
     <div class="limit">
       <h2>What it does not catch yet</h2>
       <p>
-        Provenance analysis catches what is structurally visible. It will not catch a
-        payment that is structurally clean but semantically wrong - the right merchant,
-        the right amount, for the wrong thing. That is layer 03, and it is next.
+        Layer 03 is a model's judgement, so it is only as good as the model and it
+        costs a call - which is why it only sees what layers 01 and 02 could not
+        settle. And provenance is only as honest as the harness that labels each step:
+        an agent framework that hides where text came from defeats it.
       </p>
     </div>
   </section>
@@ -314,88 +356,159 @@
 </div>
 
 <div class="wrap">
-  <footer>Decisions are real. Settlement is simulated - no funds move.</footer>
+  <footer>Decisions are real and signed. Settlement is real on Solana devnet - a test network with a test token, so no real money moves.</footer>
 </div>
 
 <script>
-const stage  = document.getElementById('stage');
-const chip   = document.getElementById('chip');
-const btns   = [document.getElementById('run-clean'), document.getElementById('run-injected')];
+  const stage = document.getElementById('stage');
+  const chip = document.getElementById('chip');
+  const keyInput = document.getElementById('key');
+  const runButtons = Array.from(document.querySelectorAll('[data-live],[data-replay]'));
+  let lastDecision = null;
 
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
-  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-function setChip(text, cls) {
-  chip.textContent = text;
-  chip.className = 'chip' + (cls ? ' ' + cls : '');
-}
-
-function render(d) {
-  const s = d.scenario;
-  setChip(d.allowed ? 'ALLOWED' : 'DENIED', d.allowed ? 'ok' : 'no');
-
-  const trace = s.instruction_chain.map((step) => {
-    const hot = step.trust === 'content';
-    return '<div class="step' + (hot ? ' hot' : '') + '">' +
-             '<div class="gutter">' + esc(step.trust) + '</div>' +
-             '<div class="body">' +
-               '<div class="src">' + esc(step.source) + '</div>' +
-               '<div class="txt">' + esc(step.content) + '</div>' +
-             '</div>' +
-           '</div>';
-  }).join('');
-
-  const checks = d.checks.map((c) =>
-    '<div class="check">' +
-      '<span class="flag ' + (c.passed ? 'y' : 'n') + '">' + (c.passed ? 'PASS' : 'FAIL') + '</span>' +
-      '<span class="cname">' + esc(c.name) + '</span>' +
-      '<span class="cdetail">' + esc(c.detail) + '</span>' +
-    '</div>').join('');
-
-  stage.innerHTML =
-    '<p class="lead">' + esc(s.description) + '</p>' +
-    '<div class="head">proposed payment</div>' +
-    '<dl>' +
-      '<div class="row"><dt>to</dt><dd><b>' + esc(s.recipient) + '</b></dd></div>' +
-      '<div class="row"><dt>amount</dt><dd><b>' + esc(s.amount) + ' ' + esc(s.currency) + '</b> on ' + esc(s.chain) + '</dd></div>' +
-      '<div class="row"><dt>memo</dt><dd>' + esc(s.memo) + '</dd></div>' +
-    '</dl>' +
-    '<div class="head">instruction chain</div>' + trace +
-    '<div class="head">checks</div>' + checks +
-    '<div class="sig">' +
-      'signature &nbsp;' + esc(d.signature.slice(0, 64)) + '…<br>' +
-      'public key ' + esc(d.public_key.slice(0, 64)) + '…<br>' +
-      'issued &nbsp;&nbsp;&nbsp;&nbsp;' + esc(d.issued_at) +
-    '</div>';
-}
-
-async function run(scenario) {
-  btns.forEach((b) => b.disabled = true);
-  setChip('EVALUATING', '');
-  stage.innerHTML = '<div class="idle">Evaluating ' + esc(scenario) + ' payment…</div>';
-  try {
-    const res = await fetch('/api/authorize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scenario })
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setChip('ERROR', 'no');
-      stage.innerHTML = '<p class="err">' + esc(data.error || 'request failed: ' + res.status) + '</p>';
-    } else {
-      render(data);
-    }
-  } catch (e) {
-    setChip('ERROR', 'no');
-    stage.innerHTML = '<p class="err">could not reach the authorization endpoint: ' + esc(e.message) + '</p>';
-  } finally {
-    btns.forEach((b) => b.disabled = false);
+  function setChip(text, cls) {
+    chip.textContent = text;
+    chip.className = 'chip' + (cls ? ' ' + cls : '');
   }
-}
 
-document.getElementById('run-clean').addEventListener('click', () => run('clean'));
-document.getElementById('run-injected').addEventListener('click', () => run('injected'));
+  function setMode(mode) {
+    for (const m of ['live', 'replay']) {
+      const on = m === mode;
+      const tab = document.getElementById('mode-' + m);
+      tab.classList.toggle('on', on);
+      tab.setAttribute('aria-selected', String(on));
+      document.getElementById('panel-' + m).hidden = !on;
+    }
+  }
+
+  function stepsHtml(chain) {
+    return chain.map((step) => {
+      const hot = step.trust === 'content';
+      return '<div class="step' + (hot ? ' hot' : '') + '">' +
+        '<div class="gutter">' + esc(step.trust) + '</div>' +
+        '<div class="body"><div class="src">' + esc(step.source) + '</div>' +
+        '<div class="txt">' + esc(step.content) + '</div></div></div>';
+    }).join('');
+  }
+
+  function checksHtml(checks) {
+    return checks.map((c) =>
+      '<div class="check">' +
+        '<span class="flag ' + (c.passed ? 'y' : 'n') + '">' + (c.passed ? 'PASS' : 'FAIL') + '</span>' +
+        '<span class="cname">' + esc(c.name) + '</span>' +
+        '<span class="cdetail">' + esc(c.detail) + '</span>' +
+      '</div>').join('');
+  }
+
+  const SETTLEMENT = {
+    settled: ['y', 'settled on Solana devnet'],
+    unconfirmed: ['n', 'submitted, not yet confirmed'],
+    failed: ['n', 'settlement failed'],
+    not_sent: ['n', 'not sent - the payment was denied'],
+    not_configured: ['n', 'devnet settlement is not configured on this deployment'],
+  };
+
+  function settlementHtml(s) {
+    if (!s) return '';
+    const [cls, text] = SETTLEMENT[s.status] || ['n', s.status];
+    let html = '<div class="head">settlement</div><div class="settle"><span class="' + cls + '">' + esc(text) + '</span>';
+    if (s.explorer_url) html += ' &nbsp;<a href="' + esc(s.explorer_url) + '" target="_blank" rel="noopener">view transaction</a>';
+    if (s.error) html += '<br>' + esc(s.error);
+    return html + '</div>';
+  }
+
+  function render(d) {
+    const s = d.scenario;
+    const chainHead = d.mode === 'live' ? 'what the agent did' : 'instruction chain';
+    if (d.allowed === null) {
+      setChip('NO PAYMENT', '');
+      lastDecision = null;
+      stage.innerHTML = '<p class="lead">' + esc(d.agent_detail) + '</p>' +
+        '<div class="head">' + chainHead + '</div>' + stepsHtml(s.instruction_chain);
+      return;
+    }
+    setChip(d.allowed ? 'ALLOWED' : 'DENIED', d.allowed ? 'ok' : 'no');
+    lastDecision = {
+      payment_id: d.payment_id, allowed: d.allowed, issued_at: d.issued_at,
+      checks: d.checks, payment: d.payment, signature: d.signature, public_key: d.public_key,
+    };
+    stage.innerHTML =
+      '<p class="lead">' + esc(s.description) + '</p>' +
+      '<div class="head">proposed payment</div><dl>' +
+        '<div class="row"><dt>to</dt><dd><b>' + esc(s.recipient) + '</b></dd></div>' +
+        '<div class="row"><dt>amount</dt><dd><b>' + esc(s.amount) + ' ' + esc(s.currency) + '</b> on ' + esc(s.chain) + '</dd></div>' +
+        '<div class="row"><dt>memo</dt><dd>' + esc(s.memo) + '</dd></div>' +
+      '</dl>' +
+      '<div class="head">' + chainHead + '</div>' + stepsHtml(s.instruction_chain) +
+      '<div class="head">checks</div>' + checksHtml(d.checks) +
+      settlementHtml(d.settlement) +
+      '<div class="sig">' +
+        'signature &nbsp;' + esc(d.signature.slice(0, 64)) + '…<br>' +
+        'public key ' + esc(d.public_key.slice(0, 64)) + '…<br>' +
+        'issued &nbsp;&nbsp;&nbsp;&nbsp;' + esc(d.issued_at) +
+      '</div>' +
+      '<button class="verify" id="verify">Verify signature</button> <span class="settle" id="verified"></span>';
+    document.getElementById('verify').addEventListener('click', verifyLast);
+  }
+
+  async function verifyLast() {
+    const out = document.getElementById('verified');
+    out.textContent = 'checking…';
+    try {
+      const res = await fetch('/api/verify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(lastDecision),
+      });
+      const data = await res.json();
+      out.innerHTML = data.valid
+        ? '<span class="y">valid - signed by ' + esc(data.public_key.slice(0, 16)) + '…</span>'
+        : '<span class="n">' + esc(data.error || 'invalid signature') + '</span>';
+    } catch (e) {
+      out.innerHTML = '<span class="n">could not reach the verify endpoint</span>';
+    }
+  }
+
+  async function post(path, payload, waiting) {
+    runButtons.forEach((b) => b.disabled = true);
+    setChip(path === '/api/run' ? 'AGENT RUNNING' : 'EVALUATING', '');
+    stage.innerHTML = '<div class="idle">' + esc(waiting) + '</div>';
+    const headers = { 'Content-Type': 'application/json' };
+    const key = keyInput.value.trim();
+    if (key) headers['X-Gemini-Key'] = key;
+    try {
+      const res = await fetch(path, { method: 'POST', headers, body: JSON.stringify(payload) });
+      const data = await res.json();
+      if (!res.ok) {
+        setChip('ERROR', 'no');
+        stage.innerHTML = '<p class="err">' + esc(data.error || ('request failed: ' + res.status)) + '</p>';
+      } else {
+        render(data);
+      }
+    } catch (e) {
+      setChip('ERROR', 'no');
+      stage.innerHTML = '<p class="err">could not reach the server: ' + esc(e.message) + '</p>';
+    } finally {
+      runButtons.forEach((b) => b.disabled = false);
+    }
+  }
+
+  document.querySelectorAll('[data-live]').forEach((b) => b.addEventListener('click', () => {
+    if (!keyInput.value.trim()) {
+      setChip('KEY NEEDED', 'no');
+      stage.innerHTML = '<p class="err">Live mode needs a Gemini API key. Paste one above, or switch to Replay.</p>';
+      keyInput.focus();
+      return;
+    }
+    post('/api/run', { listing: b.dataset.live },
+      'The agent is working - searching fares, getting a quote, reading the listing. This takes 10-30 seconds…');
+  }));
+  document.querySelectorAll('[data-replay]').forEach((b) => b.addEventListener('click', () =>
+    post('/api/authorize', { scenario: b.dataset.replay }, 'Evaluating ' + b.dataset.replay + ' payment…')));
+  document.getElementById('mode-live').addEventListener('click', () => setMode('live'));
+  document.getElementById('mode-replay').addEventListener('click', () => setMode('replay'));
 </script>
 </body>
 </html>
