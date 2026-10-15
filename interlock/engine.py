@@ -17,11 +17,13 @@ class Decision:
     issued_at: str
     signature: str
     public_key: str
+    payment: dict
 
     def to_dict(self) -> dict:
         return {
             "payment_id": self.payment_id,
             "allowed": self.allowed,
+            "payment": self.payment,
             "issued_at": self.issued_at,
             "checks": [
                 {"name": c.name, "passed": c.passed, "detail": c.detail}
@@ -30,6 +32,16 @@ class Decision:
             "signature": self.signature,
             "public_key": self.public_key,
         }
+
+
+def payment_terms(payment: PaymentRequest) -> dict:
+    """The parts of a payment a decision commits to."""
+    return {
+        "recipient": payment.recipient,
+        "amount": str(payment.amount),
+        "currency": payment.currency,
+        "chain": payment.chain,
+    }
 
 
 def authorize(
@@ -58,7 +70,8 @@ def authorize(
 
     allowed = all(c.passed for c in checks)
     issued_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    payload = canonical_payload(payment.payment_id, allowed, checks, issued_at)
+    terms = payment_terms(payment)
+    payload = canonical_payload(payment.payment_id, allowed, checks, issued_at, terms)
 
     return Decision(
         payment_id=payment.payment_id,
@@ -67,4 +80,5 @@ def authorize(
         issued_at=issued_at,
         signature=signer.sign(payload),
         public_key=signer.public_key_hex,
+        payment=terms,
     )

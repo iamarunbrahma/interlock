@@ -15,12 +15,14 @@ def canonical_payload(
     allowed: bool,
     checks: tuple[CheckResult, ...],
     issued_at: str,
+    payment: dict | None = None,
 ) -> dict:
     """Deterministic dict for signing.
 
-    Checks are sorted by name so that ordering cannot change the signature.
+    Checks are sorted by name so that ordering cannot change the signature. The
+    payment terms are signed too, so a verified decision states what it approved.
     """
-    return {
+    payload = {
         "payment_id": payment_id,
         "allowed": allowed,
         "issued_at": issued_at,
@@ -29,6 +31,22 @@ def canonical_payload(
             key=lambda c: c["name"],
         ),
     }
+    if payment is not None:
+        payload["payment"] = payment
+    return payload
+
+
+def payload_from_decision(body: dict) -> dict:
+    """Rebuild the signed payload from a decision's JSON form.
+
+    Raises KeyError or TypeError if the body is not a decision.
+    """
+    checks = tuple(
+        CheckResult(c["name"], bool(c["passed"]), c["detail"]) for c in body["checks"]
+    )
+    return canonical_payload(
+        body["payment_id"], body["allowed"], checks, body["issued_at"], body.get("payment")
+    )
 
 
 def _encode(payload: dict) -> bytes:

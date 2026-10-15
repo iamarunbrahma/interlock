@@ -11,7 +11,7 @@ from interlock.models import (
     PlanHint,
     TrustLevel,
 )
-from interlock.trace import Signer, canonical_payload, verify
+from interlock.trace import Signer, canonical_payload, payload_from_decision, verify
 
 MANDATE = Mandate(
     mandate_id="m_1",
@@ -123,7 +123,11 @@ def test_decision_signature_verifies():
     signer = Signer.generate()
     decision = authorize(MANDATE, PAYMENT, Decimal("0"), signer)
     rebuilt = canonical_payload(
-        decision.payment_id, decision.allowed, decision.checks, decision.issued_at
+        decision.payment_id,
+        decision.allowed,
+        decision.checks,
+        decision.issued_at,
+        decision.payment,
     )
     assert verify(rebuilt, decision.signature, decision.public_key)
 
@@ -131,3 +135,19 @@ def test_decision_signature_verifies():
 def test_to_dict_is_json_serialisable():
     decision = authorize(MANDATE, PAYMENT, Decimal("0"), Signer.generate())
     assert json.loads(json.dumps(decision.to_dict()))["allowed"] is True
+
+
+def test_signature_binds_the_payment_terms():
+    signer = Signer.generate()
+    decision = authorize(MANDATE, PAYMENT, Decimal("0"), signer)
+    body = decision.to_dict()
+    assert body["payment"] == {
+        "recipient": "merchant.airline.example",
+        "amount": "540",
+        "currency": "USDC",
+        "chain": "solana",
+    }
+    payload = payload_from_decision(body)
+    assert verify(payload, decision.signature, decision.public_key)
+    payload["payment"]["amount"] = "5400"
+    assert not verify(payload, decision.signature, decision.public_key)

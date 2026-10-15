@@ -1,5 +1,5 @@
 from interlock.models import CheckResult
-from interlock.trace import Signer, canonical_payload, verify
+from interlock.trace import Signer, canonical_payload, payload_from_decision, verify
 
 
 def test_signature_verifies_against_public_key():
@@ -36,3 +36,24 @@ def test_wrong_public_key_fails_verification():
     signer, other = Signer.generate(), Signer.generate()
     payload = canonical_payload("p_1", True, (), "2026-09-13T00:00:00Z")
     assert not verify(payload, signer.sign(payload), other.public_key_hex)
+
+
+def test_payload_without_payment_has_no_payment_key():
+    payload = canonical_payload("p_1", True, (), "2026-09-13T00:00:00Z")
+    assert "payment" not in payload
+
+
+def test_payload_from_decision_rebuilds_the_signed_payload():
+    signer = Signer.generate()
+    checks = (CheckResult("amount", True, "ok"),)
+    terms = {"recipient": "m", "amount": "1", "currency": "USDC", "chain": "solana"}
+    payload = canonical_payload("p_1", True, checks, "2026-09-13T00:00:00Z", terms)
+    body = {
+        "payment_id": "p_1",
+        "allowed": True,
+        "issued_at": "2026-09-13T00:00:00Z",
+        "checks": [{"name": "amount", "passed": True, "detail": "ok"}],
+        "payment": terms,
+    }
+    assert payload_from_decision(body) == payload
+    assert verify(payload_from_decision(body), signer.sign(payload), signer.public_key_hex)
