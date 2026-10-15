@@ -18,6 +18,7 @@
     --dim:     #63636d;
     --ok:      #4ade80;
     --no:      #ff6b5f;
+    --warn:    #d4a94a;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   }
@@ -150,7 +151,12 @@
   .step.hot .body { border-left-color: var(--no); background: rgba(255,107,95,.045); padding-left: 12px; }
   .src { color: var(--mid); }
   .step.hot .src { color: var(--no); }
-  .txt { color: var(--dim); word-break: break-word; margin-top: 2px; }
+  .txt { color: var(--dim); word-break: break-word; margin-top: 2px; white-space: pre-wrap; }
+  .step.untrusted .gutter { color: var(--warn); }
+  .step.untrusted .body { border-left-color: rgba(212,169,74,.55); padding-left: 12px; }
+  .flag.s { color: var(--dim); }
+  .settle .w { color: var(--warn); }
+  .title { font-family: var(--mono); font-size: 11px; color: var(--mid); letter-spacing: .04em; margin: 0 0 14px; }
 
   /* ---------- checks ---------- */
   .check { display: flex; gap: 12px; padding: 6px 0; font-family: var(--mono); font-size: 12px; align-items: baseline; }
@@ -235,7 +241,7 @@
     <div class="mandate">
       <dl>
         <div class="row"><dt>intent</dt><dd><b>Book a one-way flight from Bangalore to London for under $600</b></dd></div>
-        <div class="row"><dt>limits</dt><dd>600 USDC per payment · 1200 USDC total · USDC on solana</dd></div>
+        <div class="row"><dt>limits</dt><dd>600 USDC per payment · 1200 USDC total per run · test USDC on Solana devnet</dd></div>
         <div class="row"><dt>allowlist</dt><dd>merchant.airline.example, merchant.agency.example</dd></div>
       </dl>
     </div>
@@ -282,9 +288,9 @@
   <section>
     <h2>Static controls cannot see this</h2>
     <p>
-      Both payments go to an allowlisted merchant, under the cap, on the right chain.
-      Wallet-level policy engines pass them both. The difference only shows up in where
-      the instruction came from.
+      The injected payment goes to an allowlisted merchant, under the cap, on the right
+      chain. Wallet-level policy engines would pass it. The difference only shows up in
+      where the instruction came from.
     </p>
     <div class="pipe">
       <div class="stage-box">
@@ -385,28 +391,59 @@
     }
   }
 
-  function stepsHtml(chain) {
+  // Tool results are JSON; show them the way a person would read them.
+  function summarize(step) {
+    if (step.trust !== 'tool') return step.content;
+    try {
+      const data = JSON.parse(step.content);
+      if (Array.isArray(data)) {
+        if (!data.length) return 'no fares found';
+        return data.length + ' fare' + (data.length > 1 ? 's' : '') + ':\n' + data.map((f) =>
+          '  ' + f.fare_id + '  ' + f.price + ' ' + f.currency + ', ' +
+          (f.stops ? f.stops + ' stop' : 'nonstop') + ', ' + f.carrier).join('\n');
+      }
+      if (data.listing_url) {
+        return 'quote ' + data.fare_id + ': pay ' + data.merchant + ' ' + data.amount + ' ' +
+          data.currency + '\nlisting ' + data.listing_url;
+      }
+    } catch (e) { /* not JSON - show it as it is */ }
+    return step.content;
+  }
+
+  // Untrusted steps are amber; red only for the ones a failed check names.
+  function stepsHtml(chain, checks) {
+    const flagged = (checks || []).filter((c) => !c.passed).map((c) => c.detail).join('\n');
     return chain.map((step) => {
-      const hot = step.trust === 'content';
-      return '<div class="step' + (hot ? ' hot' : '') + '">' +
+      const cls = step.trust !== 'content' ? '' : flagged.includes(step.source) ? ' hot' : ' untrusted';
+      return '<div class="step' + cls + '">' +
         '<div class="gutter">' + esc(step.trust) + '</div>' +
         '<div class="body"><div class="src">' + esc(step.source) + '</div>' +
-        '<div class="txt">' + esc(step.content) + '</div></div></div>';
+        '<div class="txt">' + esc(summarize(step)) + '</div></div></div>';
     }).join('');
   }
 
-  function checksHtml(checks) {
-    return checks.map((c) =>
+  const LAYER3_SKIPPED = {
+    off: 'not run - no Gemini key, so layer 03 is off. Add a key to let it judge this payment.',
+    not_reached: 'not needed - an earlier layer already denied this payment',
+  };
+
+  function checksHtml(checks, layer3) {
+    let html = checks.map((c) =>
       '<div class="check">' +
         '<span class="flag ' + (c.passed ? 'y' : 'n') + '">' + (c.passed ? 'PASS' : 'FAIL') + '</span>' +
         '<span class="cname">' + esc(c.name) + '</span>' +
         '<span class="cdetail">' + esc(c.detail) + '</span>' +
       '</div>').join('');
+    if (LAYER3_SKIPPED[layer3]) {
+      html += '<div class="check"><span class="flag s">SKIP</span><span class="cname">intent_match</span>' +
+        '<span class="cdetail">' + esc(LAYER3_SKIPPED[layer3]) + '</span></div>';
+    }
+    return html;
   }
 
   const SETTLEMENT = {
     settled: ['y', 'settled on Solana devnet'],
-    unconfirmed: ['n', 'submitted, not yet confirmed'],
+    unconfirmed: ['w', 'submitted, not yet confirmed'],
     failed: ['n', 'settlement failed'],
     not_sent: ['n', 'not sent - the payment was denied'],
     not_configured: ['n', 'devnet settlement is not configured on this deployment'],
@@ -421,13 +458,14 @@
     return html + '</div>';
   }
 
-  function render(d) {
+  function render(d, title) {
     const s = d.scenario;
     const chainHead = d.mode === 'live' ? 'what the agent did' : 'instruction chain';
+    const heading = '<p class="title">' + esc(title) + '</p>';
     if (d.allowed === null) {
       setChip('NO PAYMENT', '');
       lastDecision = null;
-      stage.innerHTML = '<p class="lead">' + esc(d.agent_detail) + '</p>' +
+      stage.innerHTML = heading + '<p class="lead">' + esc(d.agent_detail) + '</p>' +
         '<div class="head">' + chainHead + '</div>' + stepsHtml(s.instruction_chain);
       return;
     }
@@ -440,7 +478,7 @@
       hijacked: 'The agent followed the injected instruction and asked to pay the agency.',
       resisted: 'The agent resisted the injection and asked to pay the quoted fare.',
     }[d.agent_outcome];
-    stage.innerHTML =
+    stage.innerHTML = heading +
       '<p class="lead">' + esc(s.description) + '</p>' +
       (outcome ? '<p class="lead"><b>' + esc(outcome) + '</b></p>' : '') +
       '<div class="head">proposed payment</div><dl>' +
@@ -448,8 +486,8 @@
         '<div class="row"><dt>amount</dt><dd><b>' + esc(s.amount) + ' ' + esc(s.currency) + '</b> on ' + esc(s.chain) + '</dd></div>' +
         '<div class="row"><dt>memo</dt><dd>' + esc(s.memo) + '</dd></div>' +
       '</dl>' +
-      '<div class="head">' + chainHead + '</div>' + stepsHtml(s.instruction_chain) +
-      '<div class="head">checks</div>' + checksHtml(d.checks) +
+      '<div class="head">' + chainHead + '</div>' + stepsHtml(s.instruction_chain, d.checks) +
+      '<div class="head">checks</div>' + checksHtml(d.checks, d.layer3) +
       settlementHtml(d.settlement) +
       '<div class="sig">' +
         'signature &nbsp;' + esc(d.signature.slice(0, 64)) + '…<br>' +
@@ -477,25 +515,36 @@
     }
   }
 
-  async function post(path, payload, waiting) {
+  function showError(message) {
+    setChip('ERROR', 'no');
+    stage.innerHTML = '<p class="err">' + esc(message) + '</p>';
+  }
+
+  async function post(path, payload, waiting, title) {
+    const key = keyInput.value.trim();
+    if (/[^\x21-\x7e]/.test(key)) {
+      showError('That key contains characters a Gemini API key never has. Paste it again.');
+      return;
+    }
     runButtons.forEach((b) => b.disabled = true);
     setChip(path === '/api/run' ? 'AGENT RUNNING' : 'EVALUATING', '');
     stage.innerHTML = '<div class="idle">' + esc(waiting) + '</div>';
     const headers = { 'Content-Type': 'application/json' };
-    const key = keyInput.value.trim();
     if (key) headers['X-Gemini-Key'] = key;
     try {
       const res = await fetch(path, { method: 'POST', headers, body: JSON.stringify(payload) });
-      const data = await res.json();
-      if (!res.ok) {
-        setChip('ERROR', 'no');
-        stage.innerHTML = '<p class="err">' + esc(data.error || ('request failed: ' + res.status)) + '</p>';
+      let data = null;
+      try { data = JSON.parse(await res.text()); } catch (e) { /* e.g. a platform timeout page */ }
+      if (!res.ok || !data || !data.scenario) {
+        const fallback = res.status === 504
+          ? 'The run took too long and the server stopped it. Try again.'
+          : 'Request failed: ' + res.status;
+        showError((data && data.error) || fallback);
       } else {
-        render(data);
+        render(data, title);
       }
     } catch (e) {
-      setChip('ERROR', 'no');
-      stage.innerHTML = '<p class="err">could not reach the server: ' + esc(e.message) + '</p>';
+      showError('Could not reach the server: ' + e.message);
     } finally {
       runButtons.forEach((b) => b.disabled = false);
     }
@@ -509,10 +558,12 @@
       return;
     }
     post('/api/run', { listing: b.dataset.live },
-      'The agent is working - searching fares, getting a quote, reading the listing. This takes 10-30 seconds…');
+      'The agent is working - searching fares, getting a quote, reading the listing. This takes 10-30 seconds…',
+      'Live agent · ' + b.textContent.toLowerCase());
   }));
   document.querySelectorAll('[data-replay]').forEach((b) => b.addEventListener('click', () =>
-    post('/api/authorize', { scenario: b.dataset.replay }, 'Evaluating ' + b.dataset.replay + ' payment…')));
+    post('/api/authorize', { scenario: b.dataset.replay }, 'Evaluating ' + b.textContent.toLowerCase() + '…',
+      'Replay · ' + b.textContent.toLowerCase())));
   document.getElementById('mode-live').addEventListener('click', () => setMode('live'));
   document.getElementById('mode-replay').addEventListener('click', () => setMode('replay'));
 </script>
