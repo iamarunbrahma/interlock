@@ -280,3 +280,8 @@ def test_only_known_paths_are_served(server):
         assert "<html" in response.read().decode()
     with urllib.request.urlopen(server + "/favicon.svg") as response:
         assert response.headers["Content-Type"].startswith("image/svg+xml")
+
+
+def test_layer_three_is_not_reached_without_a_key_when_an_earlier_layer_denies():
+    """Adding a key would not change anything, so the page must not suggest it."""
+    assert app.decide("injected")["layer3"] == "not_reached"

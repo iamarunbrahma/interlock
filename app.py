@@ -88,9 +88,11 @@ class _KeyCheckedAssessor:
 def _layer3(checks: list[dict], api_key: str | None) -> str:
     """Whether the semantic layer judged this payment: off without a key, and not
     reached when a cheaper layer already denied."""
-    if not api_key:
-        return "off"
-    return "ran" if any(c["name"] == "intent_match" for c in checks) else "not_reached"
+    if any(c["name"] == "intent_match" for c in checks):
+        return "ran"
+    if any(not c["passed"] for c in checks):
+        return "not_reached"
+    return "off" if not api_key else "not_reached"
 
 
 def decide(name: str, api_key: str | None = None) -> dict:
