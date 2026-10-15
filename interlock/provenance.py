@@ -76,20 +76,23 @@ def _check_plan_divergence(payment: PaymentRequest) -> CheckResult:
             "No trusted plan step to compare the payment against",
         )
 
-    # The payment is held to the latest trusted plan and, when one exists, to the
-    # latest plan made before any untrusted content arrived: content can steer the
-    # agent into a fresh quote, so a re-quote cannot wash out what came before it.
-    first_content = next(
-        (i for i, step in enumerate(chain) if step.trust is TrustLevel.CONTENT), len(chain)
-    )
-    untainted = [plan for index, plan in plans if index < first_content]
-    references = [plans[-1][1]] + untainted[-1:]
+    # Untrusted content that follows a trusted plan can steer everything after it,
+    # including the agent's choice to re-quote. So the payment is held to the latest
+    # plan and to the last plan made before that content arrived.
+    intervening_at = [
+        index
+        for index in range(plans[0][0] + 1, len(chain))
+        if chain[index].trust is TrustLevel.CONTENT
+    ]
+    references = [plans[-1][1]]
+    if intervening_at:
+        references.append([plan for index, plan in plans if index < intervening_at[0]][-1])
     diverged_from = [
         plan
         for plan in references
         if payment.recipient != plan.recipient or payment.amount != plan.amount
     ]
-    intervening = [step for step in chain[plans[0][0] + 1 :] if step.trust is TrustLevel.CONTENT]
+    intervening = [chain[index] for index in intervening_at]
 
     if not diverged_from:
         plan = plans[-1][1]

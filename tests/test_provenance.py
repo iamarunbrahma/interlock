@@ -156,3 +156,19 @@ def test_a_re_quote_after_untrusted_content_is_treated_as_steered():
         payment(chain, recipient="merchant.airline.example", amount=Decimal("585"))
     )
     assert "plan_divergence" in failed(results)
+
+
+def test_early_content_does_not_unlock_a_steered_re_quote():
+    """Content before the first plan must not remove the anchor that a later
+    re-quote is held against."""
+    requote = InstructionStep(
+        "quote-tool",
+        TrustLevel.TOOL,
+        "fare $585 with merchant.airline.example",
+        PlanHint("merchant.airline.example", Decimal("585")),
+    )
+    chain = (PRINCIPAL, BENIGN_CONTENT, TOOL, BENIGN_CONTENT, requote, AGENT)
+    results = run_provenance_checks(
+        payment(chain, recipient="merchant.airline.example", amount=Decimal("585"))
+    )
+    assert "plan_divergence" in failed(results)
