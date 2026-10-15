@@ -188,3 +188,16 @@ def test_unknown_post_route_and_bad_json_are_rejected(server):
     with pytest.raises(urllib.error.HTTPError) as exc:
         urllib.request.urlopen(request)
     assert exc.value.code == 400
+
+
+@pytest.mark.parametrize("code,expected", [(400, 401), (403, 401), (429, 429)])
+def test_replay_with_a_rejected_key_reports_the_key_not_a_denial(monkeypatch, code, expected):
+    class Rejecting:
+        def assess(self, mandate, payment):
+            raise genai_errors.APIError(code, {"error": {"code": code, "message": "nope", "status": "X"}})
+
+    monkeypatch.setattr(app, "GeminiAssessor", lambda key: Rejecting())
+    status, body = app.handle_authorize({"scenario": "clean"}, KEY)
+    assert status == expected
+    assert "error" in body
+    assert "allowed" not in body

@@ -67,11 +67,30 @@ def _payment_view(payment) -> dict:
     }
 
 
+class _KeyCheckedAssessor:
+    """In Replay the assessor is the only Gemini call, so a rejected or exhausted
+    key must surface as a key problem - not as a denial of the scenario."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.rejection: genai_errors.APIError | None = None
+
+    def assess(self, mandate, payment):
+        try:
+            return self._inner.assess(mandate, payment)
+        except genai_errors.APIError as exc:
+            if getattr(exc, "code", None) in (400, 401, 403, 429):
+                self.rejection = exc
+            raise
+
+
 def decide(name: str, api_key: str | None = None) -> dict:
     """Replay one named scenario: scripted inputs, real decision, real settlement."""
     scenario = SCENARIOS[name]
-    assessor = GeminiAssessor(api_key) if api_key else None
+    assessor = _KeyCheckedAssessor(GeminiAssessor(api_key)) if api_key else None
     decision = authorize(scenario.mandate, scenario.payment, scenario.spent, SIGNER, assessor)
+    if assessor is not None and assessor.rejection is not None:
+        raise assessor.rejection  # nothing was settled; handle_authorize maps it
     body = decision.to_dict()
     body["mode"] = "replay"
     body["scenario"] = {
