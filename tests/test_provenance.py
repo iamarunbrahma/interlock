@@ -129,3 +129,28 @@ def test_a_plan_set_after_untrusted_content_cannot_launder_a_redirect():
         payment(chain, recipient="merchant.agency.example", amount=Decimal("595"))
     )
     assert "plan_divergence" in failed(results)
+
+
+def test_content_before_the_first_plan_does_not_switch_the_rule_off():
+    """Untrusted content early in the chain must not blind the rule to untrusted
+    content that follows the plan."""
+    chain = (PRINCIPAL, BENIGN_CONTENT, TOOL, BENIGN_CONTENT, AGENT)
+    results = run_provenance_checks(
+        payment(chain, recipient="merchant.agency.example", amount=Decimal("595"))
+    )
+    assert "plan_divergence" in failed(results)
+
+
+def test_a_payment_matching_a_later_trusted_quote_passes():
+    """Re-quoting after reading a page and paying exactly that quote is not a redirect."""
+    requote = InstructionStep(
+        "quote-tool",
+        TrustLevel.TOOL,
+        "fare $585 with merchant.airline.example",
+        PlanHint("merchant.airline.example", Decimal("585")),
+    )
+    chain = (PRINCIPAL, TOOL, BENIGN_CONTENT, requote, AGENT)
+    results = run_provenance_checks(
+        payment(chain, recipient="merchant.airline.example", amount=Decimal("585"))
+    )
+    assert "plan_divergence" not in failed(results)

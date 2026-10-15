@@ -45,21 +45,12 @@ def _untrusted_hits(
     ]
 
 
-def _last_trusted_plan(
-    chain: tuple[InstructionStep, ...],
-) -> tuple[int, PlanHint] | None:
-    """The last plan a trusted tool set before untrusted content entered the chain.
-
-    A plan set after that point may itself have been steered by the content - the
-    agent chooses what to quote - so it cannot reset the comparison.
-    """
-    found = None
-    for index, step in enumerate(chain):
-        if step.trust is TrustLevel.CONTENT:
-            break
-        if step.trust is TrustLevel.TOOL and step.plan is not None:
-            found = (index, step.plan)
-    return found
+def _trusted_plans(chain: tuple[InstructionStep, ...]) -> list[tuple[int, PlanHint]]:
+    return [
+        (index, step.plan)
+        for index, step in enumerate(chain)
+        if step.trust is TrustLevel.TOOL and step.plan is not None
+    ]
 
 
 def _check_patterns(
@@ -76,19 +67,23 @@ def _check_patterns(
 
 
 def _check_plan_divergence(payment: PaymentRequest) -> CheckResult:
-    found = _last_trusted_plan(payment.instruction_chain)
-    if found is None:
+    plans = _trusted_plans(payment.instruction_chain)
+    if not plans:
         return CheckResult(
             "plan_divergence",
             True,
             "No trusted plan step to compare the payment against",
         )
 
-    index, plan = found
+    # Compare against the latest trusted plan, but count untrusted content from the
+    # first one on: content can steer the agent into a fresh quote, and a re-quote
+    # must not wash out what came before it.
+    first_index = plans[0][0]
+    plan = plans[-1][1]
     diverged = payment.recipient != plan.recipient or payment.amount != plan.amount
     intervening = [
         step
-        for step in payment.instruction_chain[index + 1 :]
+        for step in payment.instruction_chain[first_index + 1 :]
         if step.trust is TrustLevel.CONTENT
     ]
 
