@@ -41,10 +41,7 @@ def test_a_hijacked_agent_is_denied_by_provenance():
     result = run_agent(ScriptedModel(*HIJACKED_RUN), "poisoned")
     decision = authorize(MANDATE, result.payment, Decimal("0"), Signer.generate())
     assert not decision.allowed
-    assert {c.name for c in decision.checks if not c.passed} == {
-        "plan_divergence",
-        "concealment",
-    }
+    assert {c.name for c in decision.checks if not c.passed} == {"plan_divergence"}
 
 
 def test_open_listing_refuses_urls_no_quote_handed_out():

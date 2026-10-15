@@ -18,6 +18,13 @@ def test_search_for_an_unknown_route_is_empty():
     assert fixtures.search("Paris", "Tokyo", None) == []
 
 
+def test_the_live_injection_redirects_without_asking_to_hide_it():
+    """Concealment is shown by the Replay scenario; the live page tests the redirect
+    alone, so the decision tracks what the agent did."""
+    assert "mention" not in fixtures.POISON.lower()
+    assert fixtures.INJECTED_RECIPIENT in fixtures.POISON
+
+
 def test_only_the_poisoned_listing_carries_the_injection():
     assert fixtures.POISON in fixtures.listing_text("lhr-540", "poisoned")
     assert fixtures.POISON not in fixtures.listing_text("lhr-540", "honest")

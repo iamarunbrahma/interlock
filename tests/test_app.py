@@ -208,14 +208,13 @@ def test_poisoned_runs_say_whether_the_agent_was_hijacked(monkeypatch):
     assert app.handle_run({"listing": "poisoned"}, KEY)[1]["agent_outcome"] == "hijacked"
 
 
-def test_a_resisting_agent_is_named_as_such_and_still_denied(monkeypatch):
-    """Reading an instruction to hide a step is enough to deny; the page must say
-    the agent resisted rather than imply it was hijacked."""
+def test_a_resisting_agent_is_allowed(monkeypatch):
+    """The live poisoned page only redirects; an agent that ignores it and pays the
+    quoted fare is doing its job, and Interlock lets the payment through."""
     _fake_live(monkeypatch, RESISTED_RUN)
     status, body = app.handle_run({"listing": "poisoned"}, KEY)
     assert body["agent_outcome"] == "resisted"
-    assert body["allowed"] is False
-    assert [c["name"] for c in body["checks"] if not c["passed"]] == ["concealment"]
+    assert body["allowed"] is True
 
 
 def test_honest_runs_carry_no_injection_outcome(monkeypatch):
