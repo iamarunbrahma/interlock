@@ -85,6 +85,14 @@ class _KeyCheckedAssessor:
             raise
 
 
+def _layer3(checks: list[dict], api_key: str | None) -> str:
+    """Whether the semantic layer judged this payment: off without a key, and not
+    reached when a cheaper layer already denied."""
+    if not api_key:
+        return "off"
+    return "ran" if any(c["name"] == "intent_match" for c in checks) else "not_reached"
+
+
 def decide(name: str, api_key: str | None = None) -> dict:
     """Replay one named scenario: scripted inputs, real decision, real settlement."""
     scenario = SCENARIOS[name]
@@ -94,6 +102,7 @@ def decide(name: str, api_key: str | None = None) -> dict:
         raise assessor.rejection  # nothing was settled; handle_authorize maps it
     body = decision.to_dict()
     body["mode"] = "replay"
+    body["layer3"] = _layer3(body["checks"], api_key)
     body["scenario"] = {
         "name": scenario.name,
         "description": scenario.description,
@@ -120,6 +129,7 @@ def run_live(listing: str, api_key: str) -> dict:
             "agent_detail": result.detail,
             "allowed": None,
             "checks": [],
+            "layer3": "not_reached",
             "settlement": None,
             "scenario": scenario,
         }
@@ -127,6 +137,7 @@ def run_live(listing: str, api_key: str) -> dict:
     decision = authorize(MANDATE, result.payment, Decimal("0"), SIGNER, GeminiAssessor(api_key))
     body = decision.to_dict()
     body["mode"] = "live"
+    body["layer3"] = _layer3(body["checks"], api_key)
     body["agent_detail"] = result.detail
     body["scenario"] = {**scenario, **_payment_view(result.payment)}
     if listing == "poisoned":
@@ -136,14 +147,19 @@ def run_live(listing: str, api_key: str) -> dict:
     return body
 
 
-def _gemini_error(exc: genai_errors.APIError) -> tuple[int, dict]:
+def _gemini_error(exc: genai_errors.APIError, mode: str) -> tuple[int, dict]:
     code = getattr(exc, "code", None)
-    reason = exc.message or exc.status or "unknown error"
+    reason = (exc.message or exc.status or "unknown error").strip().rstrip(".")
+    way_out = (
+        "Clear the key field to replay without layer 03"
+        if mode == "replay"
+        else "Check the key, or use Replay mode"
+    )
     if code == 429:
-        return 429, {"error": f"Your Gemini key is out of quota or rate-limited ({reason}). Try again later, or use Replay mode."}
+        return 429, {"error": f"Your Gemini key is out of quota or rate-limited ({reason}). Try again later. {way_out}."}
     if code in (400, 401, 403):
-        return 401, {"error": f"Gemini rejected the request: {reason}. Check the key, or use Replay mode."}
-    return 502, {"error": f"Gemini error {code}: {reason}"}
+        return 401, {"error": f"Gemini rejected the key ({reason}). {way_out}."}
+    return 502, {"error": f"Gemini error {code} ({reason}). Try again in a moment."}
 
 
 def handle_authorize(request: dict, key: str | None) -> tuple[int, dict]:
@@ -153,7 +169,7 @@ def handle_authorize(request: dict, key: str | None) -> tuple[int, dict]:
     try:
         return 200, decide(name, key)
     except genai_errors.APIError as exc:
-        return _gemini_error(exc)
+        return _gemini_error(exc, "replay")
 
 
 def handle_run(request: dict, key: str | None) -> tuple[int, dict]:
@@ -165,7 +181,7 @@ def handle_run(request: dict, key: str | None) -> tuple[int, dict]:
     try:
         return 200, run_live(listing, key)
     except genai_errors.APIError as exc:
-        return _gemini_error(exc)
+        return _gemini_error(exc, "live")
     except httpx.HTTPError as exc:
         return 502, {"error": f"could not reach Gemini: {type(exc).__name__}"}
 
@@ -181,6 +197,12 @@ def handle_verify(request: dict, key: str | None) -> tuple[int, dict]:
         return 400, {"error": "not a decision: expected the fields returned by /api/authorize"}
     return 200, {"valid": valid, "public_key": SIGNER.public_key_hex}
 
+
+STATIC = {
+    "/": ("index.html", "text/html; charset=utf-8"),
+    "/index.html": ("index.html", "text/html; charset=utf-8"),
+    "/favicon.svg": ("favicon.svg", "image/svg+xml"),
+}
 
 ROUTES = {
     "/api/authorize": handle_authorize,
@@ -217,8 +239,13 @@ class handler(BaseHTTPRequestHandler):
             else:
                 self._send(200, page.encode(), "text/html; charset=utf-8")
             return
-        with open(os.path.join(PUBLIC, "index.html"), "rb") as f:
-            self._send(200, f.read(), "text/html; charset=utf-8")
+        static = STATIC.get(path)
+        if static is None:
+            self._send(404, b"not found", "text/plain; charset=utf-8")
+            return
+        filename, content_type = static
+        with open(os.path.join(PUBLIC, filename), "rb") as f:
+            self._send(200, f.read(), content_type)
 
     def do_POST(self) -> None:
         route = ROUTES.get(urlparse(self.path).path.rstrip("/"))

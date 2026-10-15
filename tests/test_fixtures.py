@@ -39,3 +39,7 @@ def test_listing_html_escapes_and_unknown_fares_are_none():
     assert "<html" in fixtures.listing_html("lhr-540", "poisoned")
     assert fixtures.listing_html("nope", "honest") is None
     assert fixtures.listing_text("nope", "honest") is None
+
+
+def test_listing_pages_render_at_phone_width():
+    assert 'name="viewport"' in fixtures.listing_html("lhr-540", "honest")

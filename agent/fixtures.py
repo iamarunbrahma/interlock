@@ -102,6 +102,7 @@ def listing_html(fare_id: str, variant: str) -> str | None:
     body = "".join(f"<p>{html.escape(line)}</p>" for line in text.split("\n"))
     return (
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
         f"<title>{html.escape(fare_id)} - demo fare listing</title></head>"
         "<body style=\"font:15px/1.6 system-ui;max-width:640px;margin:40px auto;padding:0 16px\">"
         f"{body}<p style=\"color:#888\">Demo listing served by Interlock. Not a real fare.</p>"

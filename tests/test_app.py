@@ -221,3 +221,62 @@ def test_honest_runs_carry_no_injection_outcome(monkeypatch):
     _fake_live(monkeypatch, HONEST_RUN)
     assert "agent_outcome" not in app.handle_run({"listing": "honest"}, KEY)[1]
 
+
+def test_replay_says_layer_three_was_off_without_a_key():
+    assert app.decide("semantic")["layer3"] == "off"
+
+
+def test_replay_says_layer_three_ran_with_a_key(monkeypatch):
+    monkeypatch.setattr(app, "GeminiAssessor", lambda key: StubAssessor(Assessment(True, "ok")))
+    assert app.decide("clean", KEY)["layer3"] == "ran"
+
+
+def test_layer_three_is_not_reached_when_an_earlier_layer_denies(monkeypatch):
+    monkeypatch.setattr(app, "GeminiAssessor", lambda key: StubAssessor(Assessment(True, "ok")))
+    assert app.decide("injected", KEY)["layer3"] == "not_reached"
+
+
+def test_live_runs_report_layer_three(monkeypatch):
+    _fake_live(monkeypatch, HONEST_RUN)
+    assert app.handle_run({"listing": "honest"}, KEY)[1]["layer3"] == "ran"
+
+
+def _rejecting_key_error():
+    return genai_errors.APIError(
+        400, {"error": {"code": 400, "message": "API key not valid. Please pass a valid API key.", "status": "INVALID_ARGUMENT"}}
+    )
+
+
+def test_a_rejected_key_in_replay_says_how_to_replay_without_it(monkeypatch):
+    class Rejecting:
+        def assess(self, mandate, payment):
+            raise _rejecting_key_error()
+
+    monkeypatch.setattr(app, "GeminiAssessor", lambda key: Rejecting())
+    error = app.handle_authorize({"scenario": "clean"}, KEY)[1]["error"]
+    assert "Clear the key" in error
+    assert "use Replay mode" not in error
+    assert ".." not in error
+
+
+def test_a_rejected_key_in_live_points_to_replay(monkeypatch):
+    def boom(model, listing):
+        raise _rejecting_key_error()
+
+    monkeypatch.setattr(app, "GeminiAssessor", lambda key: None)
+    monkeypatch.setattr(app, "GeminiAgentModel", lambda key: None)
+    monkeypatch.setattr(app, "run_agent", boom)
+    error = app.handle_run({"listing": "honest"}, KEY)[1]["error"]
+    assert "Replay mode" in error
+    assert ".." not in error
+
+
+def test_only_known_paths_are_served(server):
+    for path in ("/robots.txt", "/favicon.ico", "/api/authorize", "/fares/", "/nope"):
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            urllib.request.urlopen(server + path)
+        assert exc.value.code == 404, path
+    with urllib.request.urlopen(server + "/") as response:
+        assert "<html" in response.read().decode()
+    with urllib.request.urlopen(server + "/favicon.svg") as response:
+        assert response.headers["Content-Type"].startswith("image/svg+xml")
