@@ -141,8 +141,10 @@ def test_content_before_the_first_plan_does_not_switch_the_rule_off():
     assert "plan_divergence" in failed(results)
 
 
-def test_a_payment_matching_a_later_trusted_quote_passes():
-    """Re-quoting after reading a page and paying exactly that quote is not a redirect."""
+def test_a_re_quote_after_untrusted_content_is_treated_as_steered():
+    """Content can steer the agent into quoting a different fare and paying exactly
+    that. Interlock fails closed: the payment is held to the plan made before the
+    content arrived."""
     requote = InstructionStep(
         "quote-tool",
         TrustLevel.TOOL,
@@ -153,4 +155,4 @@ def test_a_payment_matching_a_later_trusted_quote_passes():
     results = run_provenance_checks(
         payment(chain, recipient="merchant.airline.example", amount=Decimal("585"))
     )
-    assert "plan_divergence" not in failed(results)
+    assert "plan_divergence" in failed(results)

@@ -67,7 +67,8 @@ def _check_patterns(
 
 
 def _check_plan_divergence(payment: PaymentRequest) -> CheckResult:
-    plans = _trusted_plans(payment.instruction_chain)
+    chain = payment.instruction_chain
+    plans = _trusted_plans(chain)
     if not plans:
         return CheckResult(
             "plan_divergence",
@@ -75,24 +76,29 @@ def _check_plan_divergence(payment: PaymentRequest) -> CheckResult:
             "No trusted plan step to compare the payment against",
         )
 
-    # Compare against the latest trusted plan, but count untrusted content from the
-    # first one on: content can steer the agent into a fresh quote, and a re-quote
-    # must not wash out what came before it.
-    first_index = plans[0][0]
-    plan = plans[-1][1]
-    diverged = payment.recipient != plan.recipient or payment.amount != plan.amount
-    intervening = [
-        step
-        for step in payment.instruction_chain[first_index + 1 :]
-        if step.trust is TrustLevel.CONTENT
+    # The payment is held to the latest trusted plan and, when one exists, to the
+    # latest plan made before any untrusted content arrived: content can steer the
+    # agent into a fresh quote, so a re-quote cannot wash out what came before it.
+    first_content = next(
+        (i for i, step in enumerate(chain) if step.trust is TrustLevel.CONTENT), len(chain)
+    )
+    untainted = [plan for index, plan in plans if index < first_content]
+    references = [plans[-1][1]] + untainted[-1:]
+    diverged_from = [
+        plan
+        for plan in references
+        if payment.recipient != plan.recipient or payment.amount != plan.amount
     ]
+    intervening = [step for step in chain[plans[0][0] + 1 :] if step.trust is TrustLevel.CONTENT]
 
-    if not diverged:
+    if not diverged_from:
+        plan = plans[-1][1]
         return CheckResult(
             "plan_divergence",
             True,
             f"Payment matches the trusted plan ({plan.recipient}, {plan.amount})",
         )
+    plan = diverged_from[-1]
     if not intervening:
         return CheckResult(
             "plan_divergence",
