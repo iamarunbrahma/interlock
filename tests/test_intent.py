@@ -131,3 +131,14 @@ def test_claude_assessor_rejects_a_non_boolean_verdict():
     client = SimpleNamespace(messages=SimpleNamespace(create=lambda **kwargs: reply))
     with pytest.raises(ValueError):
         ClaudeAssessor(client=client).assess(MANDATE, PAYMENT)
+
+
+def test_the_assessor_client_times_out_instead_of_hanging(monkeypatch):
+    import google.genai as genai_module
+
+    from interlock.intent import GEMINI_TIMEOUT_MS
+
+    captured = {}
+    monkeypatch.setattr(genai_module, "Client", lambda **kwargs: captured.update(kwargs))
+    GeminiAssessor("k")
+    assert captured["http_options"].timeout == GEMINI_TIMEOUT_MS

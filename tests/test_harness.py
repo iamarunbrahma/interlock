@@ -149,3 +149,14 @@ def test_a_second_quote_after_the_listing_does_not_launder_a_redirect():
     result = run_agent(model, "poisoned")
     decision = authorize(MANDATE, result.payment, Decimal("0"), Signer.generate())
     assert "plan_divergence" in {c.name for c in decision.checks if not c.passed}
+
+
+def test_the_agent_client_times_out_instead_of_hanging(monkeypatch):
+    import google.genai as genai_module
+
+    from interlock.intent import GEMINI_TIMEOUT_MS
+
+    captured = {}
+    monkeypatch.setattr(genai_module, "Client", lambda **kwargs: captured.update(kwargs))
+    GeminiAgentModel("k")
+    assert captured["http_options"].timeout == GEMINI_TIMEOUT_MS

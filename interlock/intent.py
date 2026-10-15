@@ -18,6 +18,8 @@ from .models import Mandate, PaymentRequest, TrustLevel
 
 MODEL = "claude-opus-5"
 GEMINI_MODEL = os.environ.get("INTERLOCK_ASSESSOR_MODEL", "gemini-flash-latest")
+# Per call. A hung call must not hold the request until the platform kills it.
+GEMINI_TIMEOUT_MS = 20_000
 
 ASSESSMENT_SCHEMA = {
     "type": "object",
@@ -153,8 +155,11 @@ class GeminiAssessor:
     def __init__(self, api_key: str | None = None, client=None, model: str = GEMINI_MODEL):
         if client is None:
             from google import genai
+            from google.genai import types
 
-            client = genai.Client(api_key=api_key)
+            client = genai.Client(
+                api_key=api_key, http_options=types.HttpOptions(timeout=GEMINI_TIMEOUT_MS)
+            )
         self._client = client
         self._model = model
 

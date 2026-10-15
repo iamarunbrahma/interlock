@@ -15,6 +15,7 @@ from typing import Protocol
 from google.genai import types
 
 from demo.scenarios import MANDATE
+from interlock.intent import GEMINI_TIMEOUT_MS
 from interlock.models import InstructionStep, PaymentRequest, PlanHint, TrustLevel
 
 from . import fixtures
@@ -222,7 +223,9 @@ class GeminiAgentModel:
         if client is None:
             from google import genai
 
-            client = genai.Client(api_key=api_key)
+            client = genai.Client(
+                api_key=api_key, http_options=types.HttpOptions(timeout=GEMINI_TIMEOUT_MS)
+            )
         self._client = client
         self._model = model
 
