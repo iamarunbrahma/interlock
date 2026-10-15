@@ -1,8 +1,11 @@
 from decimal import Decimal
 from types import SimpleNamespace
 
+import pytest
+
 from interlock.intent import (
     Assessment,
+    ClaudeAssessor,
     GeminiAssessor,
     StubAssessor,
     build_assessment_prompt,
@@ -92,3 +95,39 @@ def test_importing_intent_does_not_require_the_gemini_sdk():
     import interlock.intent as module
 
     assert not hasattr(module, "genai")
+
+
+@pytest.mark.parametrize("raw", ['"false"', '"true"', "0", "1", "null", '"no"'])
+def test_gemini_assessor_rejects_a_non_boolean_verdict(raw):
+    """bool("false") is True - a lenient parse would turn a refusal into an allow."""
+    client = FakeGeminiClient('{"matches_intent": %s, "reasoning": "x"}' % raw)
+    with pytest.raises(ValueError):
+        GeminiAssessor(client=client).assess(MANDATE, PAYMENT)
+
+
+def test_a_non_boolean_verdict_denies_the_payment():
+    from interlock.engine import authorize
+    from interlock.trace import Signer
+
+    clean = PaymentRequest(
+        payment_id="p_2",
+        mandate_id="m_1",
+        recipient="merchant.airline.example",
+        amount=Decimal("540"),
+        currency="USDC",
+        chain="solana",
+        memo="One-way flight BLR-LHR",
+        instruction_chain=(InstructionStep("user", TrustLevel.PRINCIPAL, "book it"),),
+    )
+    client = FakeGeminiClient('{"matches_intent": "false", "reasoning": "Dubai."}')
+    decision = authorize(MANDATE, clean, Decimal("0"), Signer.generate(), GeminiAssessor(client=client))
+    assert not decision.allowed
+
+
+def test_claude_assessor_rejects_a_non_boolean_verdict():
+    reply = SimpleNamespace(
+        content=[SimpleNamespace(type="text", text='{"matches_intent": "false", "reasoning": "x"}')]
+    )
+    client = SimpleNamespace(messages=SimpleNamespace(create=lambda **kwargs: reply))
+    with pytest.raises(ValueError):
+        ClaudeAssessor(client=client).assess(MANDATE, PAYMENT)

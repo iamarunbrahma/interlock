@@ -50,6 +50,19 @@ class Assessment:
     reasoning: str
 
 
+def parse_assessment(text: str) -> Assessment:
+    """Strict parse of a model's verdict.
+
+    Anything but a JSON boolean for matches_intent is an error, which the engine
+    turns into a denial. Never coerce: bool("false") is True.
+    """
+    data = json.loads(text)
+    matches = data["matches_intent"]
+    if not isinstance(matches, bool):
+        raise ValueError(f"matches_intent must be a JSON boolean, got {matches!r}")
+    return Assessment(matches_intent=matches, reasoning=str(data["reasoning"]))
+
+
 class Assessor(Protocol):
     def assess(self, mandate: Mandate, payment: PaymentRequest) -> Assessment: ...
 
@@ -128,10 +141,7 @@ class ClaudeAssessor:
             },
         )
         text = next(b.text for b in response.content if b.type == "text")
-        data = json.loads(text)
-        return Assessment(
-            matches_intent=data["matches_intent"], reasoning=data["reasoning"]
-        )
+        return parse_assessment(text)
 
 
 class GeminiAssessor:
@@ -160,7 +170,4 @@ class GeminiAssessor:
                 temperature=0,
             ),
         )
-        data = json.loads(response.text)
-        return Assessment(
-            matches_intent=bool(data["matches_intent"]), reasoning=str(data["reasoning"])
-        )
+        return parse_assessment(response.text)
