@@ -92,7 +92,7 @@ SPL `TransferChecked` from the treasury's token account to the merchant's, plus 
 Memo instruction carrying `payment_id` and the first 32 hex chars of the decision
 signature. Signs with `solders`, sends via plain JSON-RPC over `urllib`, waits for
 `confirmed`. Returns `Settlement(status, signature, explorer_url, error)`.
-Merchant names map to devnet addresses in `interlock/devnet.py`
+Merchant names map to devnet addresses in `interlock/devnet.json`, written by the setup script
 (`merchant.airline.example` and `merchant.agency.example` each get a wallet).
 
 **`interlock/intent.py` - `GeminiAssessor`.** Same `Assessor` protocol and prompt as
@@ -101,7 +101,7 @@ visitor's key.
 
 **`scripts/devnet_setup.py` - one-off setup.** Creates the treasury and merchant
 keypairs, a 6-decimal test mint labelled "devnet test USDC", the token accounts,
-and mints a large balance to the treasury. Prints the env vars to set. Run once by
+and mints a large balance to the treasury. Writes `interlock/devnet.json` and prints the env vars to set. Run once by
 hand; not part of the deploy.
 
 ### Changed units
@@ -158,7 +158,7 @@ Interlock fails closed. Nothing is reported as settled unless devnet confirmed i
 | `SOLANA_TREASURY_KEY` | Vercel, production + preview | Devnet-only keypair, base58 |
 | `SOLANA_RPC_URL` | optional | Defaults to `https://api.devnet.solana.com` |
 
-Mint and merchant addresses are public and live in `interlock/devnet.py`.
+Mint and merchant addresses are public and live in `interlock/devnet.json`.
 
 Runtime dependencies grow from `cryptography` to `cryptography`, `google-genai`,
 `solders`. `vercel.json` sets `maxDuration` to 120s for the function.
