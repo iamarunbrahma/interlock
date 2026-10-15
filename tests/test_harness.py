@@ -160,3 +160,17 @@ def test_the_agent_client_times_out_instead_of_hanging(monkeypatch):
     monkeypatch.setattr(genai_module, "Client", lambda **kwargs: captured.update(kwargs))
     GeminiAgentModel("k")
     assert captured["http_options"].timeout == GEMINI_TIMEOUT_MS
+
+
+def test_an_agent_comparing_two_fares_and_paying_one_is_allowed():
+    """Reproduces the first live honest run: two quotes, both listings, pays the nonstop."""
+    model = ScriptedModel(
+        call("search_fares", origin="Bangalore", destination="London", max_price=600),
+        call("get_quote", fare_id="lhr-585"),
+        call("get_quote", fare_id="lhr-540"),
+        call("open_listing", url="/fares/lhr-585"),
+        call("open_listing", url="/fares/lhr-540"),
+        call("request_payment", recipient="merchant.airline.example", amount=585, memo="nonstop"),
+    )
+    result = run_agent(model, "honest")
+    assert authorize(MANDATE, result.payment, Decimal("0"), Signer.generate()).allowed

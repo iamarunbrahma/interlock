@@ -26,7 +26,7 @@ human), `tool` (trusted structured output), `content` (untrusted fetched content
 
 - `override_language` - untrusted content contains imperative text aimed at the agent
 - `plan_divergence` - untrusted content appeared after a trusted plan, and the payment
-  differs from the latest plan or from the last one made before that content
+  matches none of the trusted plans made before that content (a later re-quote does not count)
 - `concealment` - untrusted content instructs the agent not to disclose a step
 
 **Layer 3 - semantic escalation (optional).** A model judges intent-to-payment

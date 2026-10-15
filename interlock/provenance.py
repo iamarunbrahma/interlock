@@ -66,6 +66,10 @@ def _check_patterns(
     return CheckResult(name, False, f"Untrusted content contains {rendered}")
 
 
+def _terms(plan: PlanHint) -> str:
+    return f"({plan.recipient}, {plan.amount})"
+
+
 def _check_plan_divergence(payment: PaymentRequest) -> CheckResult:
     chain = payment.instruction_chain
     plans = _trusted_plans(chain)
@@ -76,47 +80,48 @@ def _check_plan_divergence(payment: PaymentRequest) -> CheckResult:
             "No trusted plan step to compare the payment against",
         )
 
-    # Untrusted content that follows a trusted plan can steer everything after it,
-    # including the agent's choice to re-quote. So the payment is held to the latest
-    # plan and to the last plan made before that content arrived.
+    def matches(plan: PlanHint) -> bool:
+        return payment.recipient == plan.recipient and payment.amount == plan.amount
+
     intervening_at = [
         index
         for index in range(plans[0][0] + 1, len(chain))
         if chain[index].trust is TrustLevel.CONTENT
     ]
-    references = [plans[-1][1]]
-    if intervening_at:
-        references.append([plan for index, plan in plans if index < intervening_at[0]][-1])
-    diverged_from = [
-        plan
-        for plan in references
-        if payment.recipient != plan.recipient or payment.amount != plan.amount
-    ]
-    intervening = [chain[index] for index in intervening_at]
-
-    if not diverged_from:
-        plan = plans[-1][1]
+    if not intervening_at:
+        latest = plans[-1][1]
+        if matches(latest):
+            return CheckResult(
+                "plan_divergence", True, f"Payment matches the trusted plan {_terms(latest)}"
+            )
         return CheckResult(
             "plan_divergence",
             True,
-            f"Payment matches the trusted plan ({plan.recipient}, {plan.amount})",
-        )
-    plan = diverged_from[-1]
-    if not intervening:
-        return CheckResult(
-            "plan_divergence",
-            True,
-            f"Payment differs from the trusted plan ({plan.recipient}, {plan.amount}) "
+            f"Payment differs from the trusted plan {_terms(latest)} "
             "but no untrusted content intervened",
         )
 
-    sources = ", ".join(sorted({step.source for step in intervening}))
+    # Untrusted content that follows a trusted plan can steer everything after it,
+    # including the agent's choice to quote again. So the payment must match one of
+    # the plans made before that content - an agent comparing several trusted quotes
+    # may pay any of them; a quote taken after the content does not count.
+    anchors = [plan for index, plan in plans if index < intervening_at[0]]
+    matched = next((plan for plan in anchors if matches(plan)), None)
+    if matched is not None:
+        return CheckResult(
+            "plan_divergence",
+            True,
+            f"Payment matches the trusted plan {_terms(matched)}, made before any "
+            "untrusted content",
+        )
+
+    sources = ", ".join(sorted({chain[index].source for index in intervening_at}))
+    expected = "; ".join(_terms(plan) for plan in anchors)
     return CheckResult(
         "plan_divergence",
         False,
         f"Payment to {payment.recipient} for {payment.amount} diverges from the "
-        f"trusted plan ({plan.recipient}, {plan.amount}) after untrusted content "
-        f"from {sources}",
+        f"trusted plan {expected} after untrusted content from {sources}",
     )
 
 

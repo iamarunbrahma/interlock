@@ -172,3 +172,19 @@ def test_early_content_does_not_unlock_a_steered_re_quote():
         payment(chain, recipient="merchant.airline.example", amount=Decimal("585"))
     )
     assert "plan_divergence" in failed(results)
+
+
+def test_comparison_shopping_across_trusted_quotes_passes():
+    """An agent that quotes two fares, reads both listings and pays one of the
+    quoted fares is following a trusted plan - just not the last one it asked for."""
+    nonstop = InstructionStep(
+        "quote-tool",
+        TrustLevel.TOOL,
+        "fare $585 with merchant.airline.example",
+        PlanHint("merchant.airline.example", Decimal("585")),
+    )
+    chain = (PRINCIPAL, nonstop, TOOL, BENIGN_CONTENT, BENIGN_CONTENT, AGENT)
+    results = run_provenance_checks(
+        payment(chain, recipient="merchant.airline.example", amount=Decimal("585"))
+    )
+    assert "plan_divergence" not in failed(results)
