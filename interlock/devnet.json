@@ -1,0 +1,9 @@
+{
+  "treasury": "BNcaBBcfmTSpphDUYvXQ34RVGTEd7b85X4tz95UHm9DN",
+  "mint": "4o1h7iGkTCzqtRWkZfYUdBF6GJmWJYpQidS3Ru4VQHzk",
+  "decimals": 6,
+  "merchants": {
+    "merchant.airline.example": "DBrKbCAnbYepx71LsKTSeohs1nbx6rd2Gk4SiVUEEi35",
+    "merchant.agency.example": "HCgyXv3BmacGmT5kP6cfgx9ZpcPFdLk9cq6yN3M5mUHy"
+  }
+}

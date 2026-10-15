@@ -44,8 +44,8 @@ pip install -r requirements-dev.txt
 python -m demo.run_attack
 ```
 
-The only runtime dependency is `cryptography`. `requirements-dev.txt` adds `pytest`
-and `mcp` for the tests and the MCP server.
+Runtime dependencies are `cryptography`, `google-genai` and `solders`. `requirements-dev.txt`
+adds `pytest` and `mcp` for the tests and the MCP server.
 
 Two scenarios run against the engine. The clean payment is allowed. The injected one
 is denied - even though it passes every deterministic check: the recipient is
@@ -63,6 +63,18 @@ The landing page and its endpoint, locally:
 ```bash
 python app.py   # http://localhost:8000
 ```
+
+Devnet settlement needs a one-off setup, then two environment variables:
+
+```bash
+python -m scripts.devnet_setup   # writes interlock/devnet.json, prints the treasury key
+export SOLANA_TREASURY_KEY=...   # printed by the script
+export INTERLOCK_SIGNING_KEY=... # any Ed25519 private key, hex
+python app.py
+```
+
+Live mode takes the visitor's Gemini key from the page, per request; nothing is configured
+server side for it.
 
 ## Use it from an agent
 
@@ -101,14 +113,45 @@ from interlock.intent import ClaudeAssessor
 decision = authorize(mandate, payment, spent, signer, ClaudeAssessor())
 ```
 
+Or on Gemini, which is what the live demo uses:
+
+```python
+from interlock.intent import GeminiAssessor
+
+decision = authorize(mandate, payment, spent, signer, GeminiAssessor(api_key))
+```
+
+If the assessor fails for any reason, the decision is a denial.
+
 ## What it does not catch yet
 
 Provenance analysis catches what is structurally visible. It will not catch a payment
 that is structurally clean but semantically wrong - the right merchant, the right
-amount, for the wrong thing. That is what layer 3 is for, and it is the next thing to
-build out.
+amount, for the wrong thing. That is what layer 3 is for. It runs on Gemini with the
+caller's key and fails closed, but it is a model's judgement, so it is only as good as
+the model.
 
-## Note
+## What is real
 
-This is early-stage work. Settlement is simulated; no funds move. The demo scenarios
-use example counterparties, not real merchants.
+- **The agent.** In Live mode a Gemini model (`gemini-flash-lite-latest` by default) books
+  the flight with tools. The instruction chain Interlock checks is built by the harness
+  from the tool calls the agent actually made; trust levels come from which tool produced
+  a step, never from the model.
+- **The decisions.** Every decision is signed with one published Ed25519 key, binds the
+  payment terms (recipient, amount, currency, chain), and can be checked at `/api/verify`.
+- **The settlement.** Allowed payments are sent on Solana devnet as an SPL transfer with a
+  memo carrying the payment id and the start of the decision signature. Denied payments
+  are never sent, and settlement refuses any decision not signed by this deployment's key
+  over exactly the terms being paid.
+
+What is not: the fares are a fixture, the merchants are example names, and the token is a
+devnet test token standing in for USDC. No real money moves. Each run is a fresh mandate,
+so the total budget applies within one run.
+
+How the live agent behaves: against the poisoned listing (which tells it to pay a partner
+agency instead of the airline), `gemini-flash-lite-latest` resisted in 10 of 10 runs, and
+each of those payments to the quoted fare was allowed and settled. An agent that does
+follow the injection is stopped by `plan_divergence`; the Replay mode's injected scenario
+shows that case.
+
+Built with Claude Code.
