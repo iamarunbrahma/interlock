@@ -17,7 +17,7 @@ from typing import Protocol
 from .models import Mandate, PaymentRequest, TrustLevel
 
 MODEL = "claude-opus-5"
-GEMINI_MODEL = os.environ.get("INTERLOCK_ASSESSOR_MODEL", "gemini-3.5-flash")
+GEMINI_MODEL = os.environ.get("INTERLOCK_ASSESSOR_MODEL", "gemini-flash-lite-latest")
 # Per call. A hung call must not hold the request until the platform kills it.
 GEMINI_TIMEOUT_MS = 20_000
 
