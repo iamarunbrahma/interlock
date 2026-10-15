@@ -544,7 +544,8 @@
           : res.status === 429
             ? 'Too many requests from your network. Wait a minute and try again.'
             : 'Request failed: ' + res.status;
-        showError((data && data.error) || fallback);
+        // Platform errors (e.g. the firewall's 429) send `error` as an object, not text.
+        showError(data && typeof data.error === 'string' ? data.error : fallback);
       } else {
         render(data, title);
       }
