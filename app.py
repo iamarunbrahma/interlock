@@ -47,7 +47,7 @@ def load_signer(env=os.environ) -> Signer:
 
 
 SIGNER = load_signer()
-DEVNET = load_config()
+DEVNET = load_config(authority=SIGNER.public_key_hex)
 if DEVNET is None and PRODUCTION:
     raise RuntimeError("SOLANA_TREASURY_KEY and interlock/devnet.json are required in production")
 RPC = JsonRpc(os.environ.get("SOLANA_RPC_URL", DEFAULT_RPC_URL)) if DEVNET else None

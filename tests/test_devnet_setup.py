@@ -39,7 +39,7 @@ def test_written_config_loads_back(tmp_path):
     merchants = {name: Keypair().pubkey() for name in MERCHANTS}
     path = tmp_path / "devnet.json"
     write_config(path, treasury.pubkey(), mint, merchants)
-    config = load_config(path, env={"SOLANA_TREASURY_KEY": str(treasury)})
+    config = load_config(path, env={"SOLANA_TREASURY_KEY": str(treasury)}, authority="k")
     assert config.mint == mint
     assert config.decimals == DECIMALS
     assert config.merchants == merchants

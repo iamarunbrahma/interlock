@@ -33,10 +33,11 @@ from interlock.trace import Signer
 
 AIRLINE = "merchant.airline.example"
 AGENCY = "merchant.agency.example"
+SIGNER = Signer.generate()
 
 
 def _decision(scenario):
-    return authorize(scenario.mandate, scenario.payment, scenario.spent, Signer.generate())
+    return authorize(scenario.mandate, scenario.payment, scenario.spent, SIGNER)
 
 
 class LiteSvmRpc:
@@ -85,12 +86,13 @@ class ExplodingRpc:
         raise AssertionError("nothing may be sent for a denied decision")
 
 
-def _offline_config():
+def _offline_config(merchants=None):
     return DevnetConfig(
         treasury=Keypair(),
         mint=Keypair().pubkey(),
         decimals=6,
-        merchants={AIRLINE: Keypair().pubkey(), AGENCY: Keypair().pubkey()},
+        merchants=merchants if merchants is not None else {AIRLINE: Keypair().pubkey(), AGENCY: Keypair().pubkey()},
+        authority=SIGNER.public_key_hex,
     )
 
 
@@ -130,7 +132,7 @@ def devnet():
     )
     tx = Transaction([treasury, mint], Message(ixs, treasury.pubkey()), svm.latest_blockhash())
     assert not isinstance(svm.send_transaction(tx), FailedTransactionMetadata)
-    return svm, DevnetConfig(treasury, mint.pubkey(), 6, merchants)
+    return svm, DevnetConfig(treasury, mint.pubkey(), 6, merchants, SIGNER.public_key_hex)
 
 
 def test_allowed_decision_settles_on_chain(devnet):
@@ -178,12 +180,35 @@ def test_memo_ties_the_transfer_to_the_decision():
     assert bytes(memo_ix.data) == text.encode()
 
 
-def test_unknown_recipient_fails_without_sending():
-    payment = dataclasses.replace(CLEAN_SCENARIO.payment, recipient="merchant.unknown.example")
-    decision = _decision(CLEAN_SCENARIO)
-    result = settle(decision, payment, _offline_config(), FakeRpc())
+def test_recipient_without_a_devnet_address_fails_without_sending():
+    result = settle(
+        _decision(CLEAN_SCENARIO), CLEAN_SCENARIO.payment, _offline_config(merchants={}), FakeRpc()
+    )
     assert result.status == "failed"
     assert "no devnet address" in result.error
+
+
+def test_a_decision_signed_by_another_key_moves_nothing():
+    other = authorize(
+        CLEAN_SCENARIO.mandate, CLEAN_SCENARIO.payment, CLEAN_SCENARIO.spent, Signer.generate()
+    )
+    result = settle(other, CLEAN_SCENARIO.payment, _offline_config(), ExplodingRpc())
+    assert result.status == "failed"
+    assert "not signed by" in result.error
+
+
+def test_a_payment_that_differs_from_the_decision_moves_nothing():
+    swapped = dataclasses.replace(CLEAN_SCENARIO.payment, amount=Decimal("599"))
+    result = settle(_decision(CLEAN_SCENARIO), swapped, _offline_config(), ExplodingRpc())
+    assert result.status == "failed"
+    assert "does not match" in result.error
+
+
+def test_a_forged_allow_moves_nothing():
+    forged = dataclasses.replace(_decision(INJECTED_SCENARIO), allowed=True)
+    result = settle(forged, INJECTED_SCENARIO.payment, _offline_config(), ExplodingRpc())
+    assert result.status == "failed"
+    assert "does not verify" in result.error
 
 
 def test_rpc_error_is_reported_as_failed():
@@ -254,12 +279,13 @@ def test_load_config_needs_both_file_and_key(tmp_path):
             }
         )
     )
-    assert load_config(path, env={}) is None
-    assert load_config(tmp_path / "missing.json", env={"SOLANA_TREASURY_KEY": str(treasury)}) is None
-    config = load_config(path, env={"SOLANA_TREASURY_KEY": f"  {treasury}  "})
+    assert load_config(path, env={}, authority="k") is None
+    assert load_config(tmp_path / "missing.json", env={"SOLANA_TREASURY_KEY": str(treasury)}, authority="k") is None
+    config = load_config(path, env={"SOLANA_TREASURY_KEY": f"  {treasury}  "}, authority="k")
+    assert config.authority == "k"
     assert config.treasury.pubkey() == treasury.pubkey()
     with pytest.raises(ValueError):
-        load_config(path, env={"SOLANA_TREASURY_KEY": str(Keypair())})
+        load_config(path, env={"SOLANA_TREASURY_KEY": str(Keypair())}, authority="k")
 
 
 class _Response(io.BytesIO):

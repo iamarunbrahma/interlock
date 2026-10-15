@@ -23,7 +23,9 @@ from solders.pubkey import Pubkey
 from solders.transaction import Transaction
 
 from . import spl
+from .engine import payment_terms
 from .models import PaymentRequest
+from .trace import canonical_payload, verify
 
 DEFAULT_RPC_URL = "https://api.devnet.solana.com"
 CONFIG_PATH = Path(__file__).with_name("devnet.json")
@@ -40,6 +42,7 @@ class DevnetConfig:
     mint: Pubkey
     decimals: int
     merchants: dict[str, Pubkey]
+    authority: str  # public key (hex) of the Interlock signer whose allow moves funds
 
 
 @dataclass(frozen=True)
@@ -110,8 +113,13 @@ class JsonRpc:
         return status.get("confirmationStatus") in ("confirmed", "finalized")
 
 
-def load_config(path: Path = CONFIG_PATH, env=os.environ) -> DevnetConfig | None:
-    """Devnet config from the committed addresses plus the treasury key, or None."""
+def load_config(
+    path: Path = CONFIG_PATH, env=os.environ, *, authority: str
+) -> DevnetConfig | None:
+    """Devnet config from the committed addresses plus the treasury key, or None.
+
+    `authority` is the public key whose signed allow decisions may move funds.
+    """
     key = env.get("SOLANA_TREASURY_KEY", "").strip()
     if not key or not path.exists():
         return None
@@ -124,6 +132,7 @@ def load_config(path: Path = CONFIG_PATH, env=os.environ) -> DevnetConfig | None
         mint=Pubkey.from_string(data["mint"]),
         decimals=int(data["decimals"]),
         merchants={name: Pubkey.from_string(a) for name, a in data["merchants"].items()},
+        authority=authority,
     )
 
 
@@ -168,6 +177,20 @@ def build_transfer(
     return Transaction([config.treasury], Message(instructions, owner), blockhash)
 
 
+def _refusal(decision, payment: PaymentRequest, authority: str) -> str | None:
+    """Funds move only for an allow decision Interlock signed over exactly these terms."""
+    if decision.public_key != authority:
+        return "refused: the decision was not signed by this deployment's Interlock key"
+    if decision.payment_id != payment.payment_id or decision.payment != payment_terms(payment):
+        return "refused: the payment does not match the terms the decision approved"
+    payload = canonical_payload(
+        decision.payment_id, decision.allowed, decision.checks, decision.issued_at, decision.payment
+    )
+    if not verify(payload, decision.signature, authority):
+        return "refused: the decision's signature does not verify"
+    return None
+
+
 def _send(config: DevnetConfig, payment: PaymentRequest, memo: str, rpc: Rpc) -> str:
     for attempt in (1, 2):
         tx = build_transfer(config, payment.recipient, payment.amount, memo, rpc.latest_blockhash())
@@ -194,6 +217,9 @@ def settle(
         return Settlement("not_sent")
     if config is None or rpc is None:
         return Settlement("not_configured", error="devnet settlement is not configured")
+    refusal = _refusal(decision, payment, config.authority)
+    if refusal:
+        return Settlement("failed", error=refusal)
 
     try:
         signature = _send(config, payment, memo_text(decision), rpc)
