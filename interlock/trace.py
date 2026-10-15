@@ -39,13 +39,15 @@ def canonical_payload(
 def payload_from_decision(body: dict) -> dict:
     """Rebuild the signed payload from a decision's JSON form.
 
-    Raises KeyError or TypeError if the body is not a decision.
+    The payment terms are required: a decision that does not state what it
+    approved is not one Interlock issued. Raises KeyError or TypeError if the
+    body is not a decision.
     """
     checks = tuple(
         CheckResult(c["name"], bool(c["passed"]), c["detail"]) for c in body["checks"]
     )
     return canonical_payload(
-        body["payment_id"], body["allowed"], checks, body["issued_at"], body.get("payment")
+        body["payment_id"], body["allowed"], checks, body["issued_at"], body["payment"]
     )
 
 

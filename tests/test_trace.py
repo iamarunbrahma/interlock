@@ -1,3 +1,5 @@
+import pytest
+
 from interlock.models import CheckResult
 from interlock.trace import Signer, canonical_payload, payload_from_decision, verify
 
@@ -57,3 +59,16 @@ def test_payload_from_decision_rebuilds_the_signed_payload():
     }
     assert payload_from_decision(body) == payload
     assert verify(payload_from_decision(body), signer.sign(payload), signer.public_key_hex)
+
+
+def test_payload_from_decision_refuses_a_decision_without_payment_terms():
+    """Every decision Interlock issues binds its payment terms; one without them
+    must not verify as if the terms were never part of the signature."""
+    body = {
+        "payment_id": "p_1",
+        "allowed": True,
+        "issued_at": "2026-09-13T00:00:00Z",
+        "checks": [],
+    }
+    with pytest.raises(KeyError):
+        payload_from_decision(body)
