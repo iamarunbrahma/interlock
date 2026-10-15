@@ -141,7 +141,7 @@ def run_agent(model: AgentModel, listing: str) -> RunResult:
                 return _payment(steps, args)
             result = _run_tool(call.name, args, listing, steps, issued)
             answers.append(types.Part.from_function_response(name=call.name, response=result))
-        history.append(types.Content(role="tool", parts=answers))
+        history.append(types.Content(role="user", parts=answers))  # Gemini wants function responses as user turns
 
 
 def _run_tool(name: str, args: dict, listing: str, steps: list, issued: dict) -> dict:

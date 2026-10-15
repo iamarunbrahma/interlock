@@ -92,7 +92,7 @@ def test_several_calls_in_one_turn_run_in_order_and_are_answered_together():
     result = run_agent(model, "honest")
     assert [s.source for s in result.steps[1:]] == ["search_fares", "get_quote"]
     answer = model.histories[1][-1]
-    assert answer.role == "tool"
+    assert answer.role == "user"
     assert [p.function_response.name for p in answer.parts] == ["search_fares", "get_quote"]
 
 
