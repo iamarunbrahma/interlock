@@ -5,7 +5,9 @@ import pytest
 from app import decide
 
 
-@pytest.mark.parametrize("name,expected", [("clean", True), ("injected", False)])
+@pytest.mark.parametrize(
+    "name,expected", [("clean", True), ("injected", False), ("semantic", True)]
+)
 def test_decide_returns_the_expected_verdict(name, expected):
     assert decide(name)["allowed"] is expected
 
