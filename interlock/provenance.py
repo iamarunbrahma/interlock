@@ -48,11 +48,18 @@ def _untrusted_hits(
 def _last_trusted_plan(
     chain: tuple[InstructionStep, ...],
 ) -> tuple[int, PlanHint] | None:
-    for index in range(len(chain) - 1, -1, -1):
-        step = chain[index]
+    """The last plan a trusted tool set before untrusted content entered the chain.
+
+    A plan set after that point may itself have been steered by the content - the
+    agent chooses what to quote - so it cannot reset the comparison.
+    """
+    found = None
+    for index, step in enumerate(chain):
+        if step.trust is TrustLevel.CONTENT:
+            break
         if step.trust is TrustLevel.TOOL and step.plan is not None:
-            return index, step.plan
-    return None
+            found = (index, step.plan)
+    return found
 
 
 def _check_patterns(

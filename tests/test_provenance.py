@@ -113,3 +113,19 @@ def test_detail_names_the_offending_source():
         r for r in run_provenance_checks(payment(chain)) if r.name == "override_language"
     )
     assert "web-page" in result.detail
+
+
+def test_a_plan_set_after_untrusted_content_cannot_launder_a_redirect():
+    """Content read after the first quote can steer the agent into a fresh quote.
+    That later plan is tainted and must not reset the comparison."""
+    requote = InstructionStep(
+        "quote-tool",
+        TrustLevel.TOOL,
+        "fare $585 with merchant.airline.example",
+        PlanHint("merchant.airline.example", Decimal("585")),
+    )
+    chain = (PRINCIPAL, TOOL, BENIGN_CONTENT, requote, AGENT)
+    results = run_provenance_checks(
+        payment(chain, recipient="merchant.agency.example", amount=Decimal("595"))
+    )
+    assert "plan_divergence" in failed(results)

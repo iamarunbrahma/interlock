@@ -137,3 +137,15 @@ def test_gemini_model_turns_an_empty_reply_into_text():
     )
     out = GeminiAgentModel("k", client=client).respond([])
     assert out.parts[0].text
+
+
+def test_a_second_quote_after_the_listing_does_not_launder_a_redirect():
+    model = ScriptedModel(
+        call("get_quote", fare_id="lhr-540"),
+        call("open_listing", url="/fares/lhr-540?variant=poisoned"),
+        call("get_quote", fare_id="lhr-585"),
+        call("request_payment", recipient="merchant.agency.example", amount=595, memo="x"),
+    )
+    result = run_agent(model, "poisoned")
+    decision = authorize(MANDATE, result.payment, Decimal("0"), Signer.generate())
+    assert "plan_divergence" in {c.name for c in decision.checks if not c.passed}
