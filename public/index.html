@@ -541,7 +541,9 @@
       if (!res.ok || !data || !data.scenario) {
         const fallback = res.status === 504
           ? 'The run took too long and the server stopped it. Try again.'
-          : 'Request failed: ' + res.status;
+          : res.status === 429
+            ? 'Too many requests from your network. Wait a minute and try again.'
+            : 'Request failed: ' + res.status;
         showError((data && data.error) || fallback);
       } else {
         render(data, title);
