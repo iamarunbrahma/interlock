@@ -36,6 +36,11 @@ class SettlementError(Exception):
     pass
 
 
+class TransportError(SettlementError):
+    """The RPC could not be reached or refused the request. Says nothing about
+    whether a transaction already sent will land."""
+
+
 @dataclass(frozen=True)
 class DevnetConfig:
     treasury: Keypair
@@ -87,7 +92,7 @@ class JsonRpc:
             with urllib.request.urlopen(request, timeout=self._timeout) as response:
                 data = json.loads(response.read())
         except (OSError, ValueError) as exc:
-            raise SettlementError(f"devnet RPC error: {exc}") from exc
+            raise TransportError(f"devnet RPC error: {exc}") from exc
         if "error" in data:
             error = data["error"]
             raise SettlementError(error.get("message", str(error)))
@@ -228,13 +233,18 @@ def settle(
 
     url = explorer_url(signature)
     deadline = clock() + timeout
-    try:
-        while not rpc.is_confirmed(signature):
-            if clock() >= deadline:
-                return Settlement(
-                    "unconfirmed", signature, url, f"not confirmed within {int(timeout)}s"
-                )
-            sleep(poll)
-    except SettlementError as exc:
-        return Settlement("failed", signature, url, str(exc))
-    return Settlement("settled", signature, url)
+    last_transport_error = None
+    while True:
+        try:
+            if rpc.is_confirmed(signature):
+                return Settlement("settled", signature, url)
+        except TransportError as exc:  # broadcast already; keep asking until the deadline
+            last_transport_error = str(exc)
+        except SettlementError as exc:  # the chain itself reported a failure
+            return Settlement("failed", signature, url, str(exc))
+        if clock() >= deadline:
+            detail = f"not confirmed within {int(timeout)}s"
+            if last_transport_error:
+                detail += f" ({last_transport_error})"
+            return Settlement("unconfirmed", signature, url, detail)
+        sleep(poll)

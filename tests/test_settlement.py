@@ -339,3 +339,33 @@ def test_json_rpc_reports_pending_and_failed_statuses(monkeypatch):
     assert rpc.is_confirmed("sig") is False
     with pytest.raises(SettlementError, match="failed on chain"):
         rpc.is_confirmed("sig")
+
+
+def test_an_rpc_outage_while_confirming_is_unconfirmed_not_failed():
+    """The transaction was broadcast; a flaky RPC says nothing about the chain."""
+
+    class FlakyRpc(FakeRpc):
+        def is_confirmed(self, signature):
+            raise settlement.TransportError("devnet RPC error: HTTP Error 429: Too Many Requests")
+
+    ticks = iter([0.0, 0.0, 31.0])
+    result = settle(
+        _decision(CLEAN_SCENARIO),
+        CLEAN_SCENARIO.payment,
+        _offline_config(),
+        FlakyRpc(),
+        sleep=lambda s: None,
+        clock=lambda: next(ticks),
+    )
+    assert result.status == "unconfirmed"
+    assert result.explorer_url is not None
+    assert "429" in result.error
+
+
+def test_json_rpc_network_errors_are_transport_errors(monkeypatch):
+    def down(request, timeout):
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(settlement.urllib.request, "urlopen", down)
+    with pytest.raises(settlement.TransportError):
+        JsonRpc("http://rpc.test").is_confirmed("sig")
