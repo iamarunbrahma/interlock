@@ -435,8 +435,13 @@
       payment_id: d.payment_id, allowed: d.allowed, issued_at: d.issued_at,
       checks: d.checks, payment: d.payment, signature: d.signature, public_key: d.public_key,
     };
+    const outcome = {
+      hijacked: 'The agent followed the injected instruction and asked to pay the agency.',
+      resisted: 'The agent resisted the injection and asked to pay the quoted fare.',
+    }[d.agent_outcome];
     stage.innerHTML =
       '<p class="lead">' + esc(s.description) + '</p>' +
+      (outcome ? '<p class="lead"><b>' + esc(outcome) + '</b></p>' : '') +
       '<div class="head">proposed payment</div><dl>' +
         '<div class="row"><dt>to</dt><dd><b>' + esc(s.recipient) + '</b></dd></div>' +
         '<div class="row"><dt>amount</dt><dd><b>' + esc(s.amount) + ' ' + esc(s.currency) + '</b> on ' + esc(s.chain) + '</dd></div>' +

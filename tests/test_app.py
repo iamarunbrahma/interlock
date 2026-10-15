@@ -5,7 +5,7 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 
 import pytest
-from fakes import HIJACKED_RUN, HONEST_RUN, ScriptedModel, say
+from fakes import HIJACKED_RUN, HONEST_RUN, RESISTED_RUN, ScriptedModel, say
 from google.genai import errors as genai_errors
 
 import app
@@ -201,3 +201,24 @@ def test_replay_with_a_rejected_key_reports_the_key_not_a_denial(monkeypatch, co
     assert status == expected
     assert "error" in body
     assert "allowed" not in body
+
+
+def test_poisoned_runs_say_whether_the_agent_was_hijacked(monkeypatch):
+    _fake_live(monkeypatch, HIJACKED_RUN)
+    assert app.handle_run({"listing": "poisoned"}, KEY)[1]["agent_outcome"] == "hijacked"
+
+
+def test_a_resisting_agent_is_named_as_such_and_still_denied(monkeypatch):
+    """Reading an instruction to hide a step is enough to deny; the page must say
+    the agent resisted rather than imply it was hijacked."""
+    _fake_live(monkeypatch, RESISTED_RUN)
+    status, body = app.handle_run({"listing": "poisoned"}, KEY)
+    assert body["agent_outcome"] == "resisted"
+    assert body["allowed"] is False
+    assert [c["name"] for c in body["checks"] if not c["passed"]] == ["concealment"]
+
+
+def test_honest_runs_carry_no_injection_outcome(monkeypatch):
+    _fake_live(monkeypatch, HONEST_RUN)
+    assert "agent_outcome" not in app.handle_run({"listing": "honest"}, KEY)[1]
+
