@@ -42,7 +42,9 @@ def create_token_account(payer: Pubkey, owner: Pubkey, mint: Pubkey) -> Instruct
     )
 
 
-def mint_to(mint: Pubkey, destination: Pubkey, authority: Pubkey, amount: int) -> Instruction:
+def mint_to(
+    mint: Pubkey, destination: Pubkey, authority: Pubkey, amount: int
+) -> Instruction:
     return Instruction(
         TOKEN_PROGRAM_ID,
         bytes([7]) + amount.to_bytes(8, "little"),
@@ -75,4 +77,6 @@ def transfer_checked(
 
 
 def memo(text: str, signer: Pubkey) -> Instruction:
-    return Instruction(MEMO_PROGRAM_ID, text.encode(), [AccountMeta(signer, True, False)])
+    return Instruction(
+        MEMO_PROGRAM_ID, text.encode(), [AccountMeta(signer, True, False)]
+    )
