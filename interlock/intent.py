@@ -10,12 +10,14 @@ core package should require the SDK to be installed.
 """
 
 import json
+import os
 from dataclasses import dataclass
 from typing import Protocol
 
 from .models import Mandate, PaymentRequest, TrustLevel
 
 MODEL = "claude-opus-5"
+GEMINI_MODEL = os.environ.get("INTERLOCK_ASSESSOR_MODEL", "gemini-flash-latest")
 
 ASSESSMENT_SCHEMA = {
     "type": "object",
@@ -33,6 +35,12 @@ ASSESSMENT_SCHEMA = {
     },
     "required": ["matches_intent", "reasoning"],
     "additionalProperties": False,
+}
+
+# Gemini's response schema subset is stricter than Claude's; drop the one keyword
+# it may refuse rather than risk every layer-3 call failing (and so denying).
+GEMINI_ASSESSMENT_SCHEMA = {
+    k: v for k, v in ASSESSMENT_SCHEMA.items() if k != "additionalProperties"
 }
 
 
@@ -123,4 +131,36 @@ class ClaudeAssessor:
         data = json.loads(text)
         return Assessment(
             matches_intent=data["matches_intent"], reasoning=data["reasoning"]
+        )
+
+
+class GeminiAssessor:
+    """Model-backed assessor on Gemini, using the caller's key.
+
+    `google-genai` is imported lazily for the same reason as the Anthropic SDK above.
+    """
+
+    def __init__(self, api_key: str | None = None, client=None, model: str = GEMINI_MODEL):
+        if client is None:
+            from google import genai
+
+            client = genai.Client(api_key=api_key)
+        self._client = client
+        self._model = model
+
+    def assess(self, mandate: Mandate, payment: PaymentRequest) -> Assessment:
+        from google.genai import types
+
+        response = self._client.models.generate_content(
+            model=self._model,
+            contents=build_assessment_prompt(mandate, payment),
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_json_schema=GEMINI_ASSESSMENT_SCHEMA,
+                temperature=0,
+            ),
+        )
+        data = json.loads(response.text)
+        return Assessment(
+            matches_intent=bool(data["matches_intent"]), reasoning=str(data["reasoning"])
         )

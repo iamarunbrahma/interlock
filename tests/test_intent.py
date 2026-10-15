@@ -1,6 +1,12 @@
 from decimal import Decimal
+from types import SimpleNamespace
 
-from interlock.intent import Assessment, StubAssessor, build_assessment_prompt
+from interlock.intent import (
+    Assessment,
+    GeminiAssessor,
+    StubAssessor,
+    build_assessment_prompt,
+)
 from interlock.models import InstructionStep, Mandate, PaymentRequest, TrustLevel
 
 MANDATE = Mandate(
@@ -53,3 +59,36 @@ def test_importing_intent_does_not_require_the_anthropic_sdk():
     import interlock.intent as module
 
     assert not hasattr(module, "anthropic")
+
+
+class FakeGeminiClient:
+    def __init__(self, text):
+        self.calls = []
+        self.models = SimpleNamespace(generate_content=self._generate)
+        self._text = text
+
+    def _generate(self, **kwargs):
+        self.calls.append(kwargs)
+        return SimpleNamespace(text=self._text)
+
+
+def test_gemini_assessor_parses_structured_output():
+    client = FakeGeminiClient('{"matches_intent": false, "reasoning": "Dubai, not London."}')
+    assessment = GeminiAssessor(client=client).assess(MANDATE, PAYMENT)
+    assert assessment == Assessment(False, "Dubai, not London.")
+
+
+def test_gemini_assessor_sends_the_prompt_and_a_json_schema():
+    client = FakeGeminiClient('{"matches_intent": true, "reasoning": "ok"}')
+    GeminiAssessor(client=client, model="m-test").assess(MANDATE, PAYMENT)
+    call = client.calls[0]
+    assert call["model"] == "m-test"
+    assert "Book a flight to London for under $600" in call["contents"]
+    assert call["config"].response_mime_type == "application/json"
+    assert "additionalProperties" not in call["config"].response_json_schema
+
+
+def test_importing_intent_does_not_require_the_gemini_sdk():
+    import interlock.intent as module
+
+    assert not hasattr(module, "genai")

@@ -151,3 +151,16 @@ def test_signature_binds_the_payment_terms():
     assert verify(payload, decision.signature, decision.public_key)
     payload["payment"]["amount"] = "5400"
     assert not verify(payload, decision.signature, decision.public_key)
+
+
+def test_layer_three_fails_closed_when_the_assessor_raises():
+    class BrokenAssessor:
+        def assess(self, mandate, payment):
+            raise RuntimeError("quota exhausted")
+
+    decision = authorize(MANDATE, PAYMENT, Decimal("0"), Signer.generate(), BrokenAssessor())
+    assert not decision.allowed
+    failed = [c for c in decision.checks if not c.passed]
+    assert [c.name for c in failed] == ["intent_match"]
+    assert failed[0].detail.startswith("intent check unavailable")
+    assert "quota exhausted" in failed[0].detail

@@ -3,7 +3,7 @@ name = "interlock"
 version = "0.1.0"
 description = "Authorization layer that decides whether an AI agent's payment is allowed to settle"
 requires-python = ">=3.11"
-dependencies = ["cryptography>=42.0.0"]
+dependencies = ["cryptography>=42.0.0", "google-genai>=2.31.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0.0", "mcp>=1.2.0"]

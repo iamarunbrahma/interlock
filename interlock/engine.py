@@ -63,10 +63,18 @@ def authorize(
         checks = checks + run_provenance_checks(payment)
 
     if all(c.passed for c in checks) and assessor is not None:
-        assessment = assessor.assess(mandate, payment)
-        checks = checks + (
-            CheckResult("intent_match", assessment.matches_intent, assessment.reasoning),
-        )
+        try:
+            assessment = assessor.assess(mandate, payment)
+            intent = CheckResult(
+                "intent_match", assessment.matches_intent, assessment.reasoning
+            )
+        except Exception as exc:  # an unavailable check must never allow
+            intent = CheckResult(
+                "intent_match",
+                False,
+                f"intent check unavailable: {type(exc).__name__}: {exc}",
+            )
+        checks = checks + (intent,)
 
     allowed = all(c.passed for c in checks)
     issued_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
