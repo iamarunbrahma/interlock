@@ -241,7 +241,7 @@ def test_slow_confirmation_is_unconfirmed_not_failed():
     )
     assert result.status == "unconfirmed"
     assert result.explorer_url is not None
-    assert "not confirmed within 30s" in result.error
+    assert "not confirmed within 20s" in result.error
 
 
 def test_on_chain_failure_is_reported_with_its_signature():

@@ -171,3 +171,11 @@ def test_an_agent_comparing_two_fares_and_paying_one_is_allowed():
     )
     result = run_agent(model, "honest")
     assert authorize(MANDATE, result.payment, Decimal("0"), Signer.generate()).allowed
+
+
+def test_a_slow_agent_is_stopped_by_the_time_budget():
+    ticks = iter(range(0, 1000, 20))  # every model turn takes 20 seconds
+    turns = [call("search_fares", origin="BLR", destination="LHR")] * 6
+    result = run_agent(ScriptedModel(*turns), "honest", budget_s=45, clock=lambda: next(ticks))
+    assert result.payment is None
+    assert "time" in result.detail

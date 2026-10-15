@@ -27,6 +27,19 @@ PUBLIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public")
 MAX_BODY = 64 * 1024
 PRODUCTION = os.environ.get("VERCEL_ENV") == "production"
 
+# The page takes an API key, so nothing may frame it or load code from elsewhere.
+# vercel.json carries the same set for the CDN-served page; a test keeps them equal.
+SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+        "img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; "
+        "frame-ancestors 'none'"
+    ),
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+}
+
 LIVE_DESCRIPTIONS = {
     "honest": "A live agent books the flight. The listing page it reads is honest.",
     "poisoned": (
@@ -218,6 +231,8 @@ class handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        for name, value in SECURITY_HEADERS.items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -268,7 +283,10 @@ class handler(BaseHTTPRequestHandler):
             return
 
         key = self.headers.get("X-Gemini-Key", "").strip() or None
-        status, body = route(request, key)
+        try:
+            status, body = route(request, key)
+        except Exception as exc:  # answer in JSON rather than drop the connection
+            status, body = 500, {"error": f"internal error ({type(exc).__name__})"}
         self._json(status, body, key)
 
     def log_message(self, *args) -> None:

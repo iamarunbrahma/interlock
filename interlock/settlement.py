@@ -29,7 +29,7 @@ from .trace import canonical_payload, verify
 
 DEFAULT_RPC_URL = "https://api.devnet.solana.com"
 CONFIG_PATH = Path(__file__).with_name("devnet.json")
-CONFIRM_TIMEOUT_S = 30.0
+CONFIRM_TIMEOUT_S = 20.0  # devnet confirms in seconds; past this the page shows the link
 
 
 class SettlementError(Exception):

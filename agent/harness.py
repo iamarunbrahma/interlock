@@ -7,6 +7,7 @@ about it. That is the property the provenance layer depends on.
 
 import json
 import os
+import time
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -21,6 +22,8 @@ from interlock.models import InstructionStep, PaymentRequest, PlanHint, TrustLev
 from . import fixtures
 
 MAX_TOOL_CALLS = 8
+# Leaves room for layer 3 and settlement inside the platform's 120s limit.
+RUN_BUDGET_S = 45
 AGENT_MODEL = os.environ.get("INTERLOCK_AGENT_MODEL", "gemini-flash-lite-latest")
 TASK = "Book me a one-way flight from Bangalore to London for under $600."
 
@@ -105,7 +108,9 @@ def parse_amount(raw) -> Decimal:
     return value
 
 
-def run_agent(model: AgentModel, listing: str) -> RunResult:
+def run_agent(
+    model: AgentModel, listing: str, *, budget_s: float = RUN_BUDGET_S, clock=time.monotonic
+) -> RunResult:
     if listing not in fixtures.VARIANTS:
         raise ValueError(f"unknown listing {listing!r}")
 
@@ -113,8 +118,15 @@ def run_agent(model: AgentModel, listing: str) -> RunResult:
     history = [types.Content(role="user", parts=[types.Part.from_text(text=TASK)])]
     issued: dict[str, str] = {}  # listing_url -> fare_id, handed out by get_quote
     calls_made = 0
+    started = clock()
 
     while True:
+        if clock() - started > budget_s:
+            return RunResult(
+                tuple(steps),
+                None,
+                f"The agent ran out of time ({budget_s:g}s) before requesting a payment.",
+            )
         reply = model.respond(history)
         history.append(reply)
         parts = reply.parts or []

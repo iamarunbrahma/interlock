@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import threading
 import urllib.error
 import urllib.request
@@ -285,3 +286,35 @@ def test_only_known_paths_are_served(server):
 def test_layer_three_is_not_reached_without_a_key_when_an_earlier_layer_denies():
     """Adding a key would not change anything, so the page must not suggest it."""
     assert app.decide("injected")["layer3"] == "not_reached"
+
+
+def test_an_unexpected_error_returns_json_not_a_dropped_connection(server, monkeypatch):
+    def broken(request, key):
+        raise ZeroDivisionError("boom")
+
+    monkeypatch.setitem(app.ROUTES, "/api/run", broken)
+    status, body = _post(server + "/api/run", {"listing": "honest"}, {"X-Gemini-Key": KEY})
+    assert status == 500
+    assert "error" in body
+    assert KEY not in json.dumps(body)
+
+
+def test_every_response_carries_security_headers(server):
+    with urllib.request.urlopen(server + "/") as response:
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+    request = urllib.request.Request(
+        server + "/api/authorize", data=b"{}", headers={"Content-Type": "application/json"}, method="POST"
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(request)
+    assert exc.value.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_the_cdn_serves_the_page_with_the_same_security_headers():
+    """On Vercel the page comes from the CDN, not this handler, so vercel.json must
+    carry the same headers."""
+    config = json.loads((Path(app.__file__).parent / "vercel.json").read_text())
+    rule = next(r for r in config["headers"] if r["source"] == "/(.*)")
+    assert {h["key"]: h["value"] for h in rule["headers"]} == app.SECURITY_HEADERS
