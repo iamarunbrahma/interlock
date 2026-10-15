@@ -179,3 +179,11 @@ def test_a_slow_agent_is_stopped_by_the_time_budget():
     result = run_agent(ScriptedModel(*turns), "honest", budget_s=45, clock=lambda: next(ticks))
     assert result.payment is None
     assert "time" in result.detail
+
+
+def test_the_prompt_asks_the_agent_to_quote_one_chosen_fare():
+    """Quote A, read A, quote B is the order that layer 2 must treat as possibly
+    steered; asking for one quote makes an honest agent avoid it."""
+    from agent.harness import SYSTEM_PROMPT
+
+    assert "quote only that fare" in SYSTEM_PROMPT

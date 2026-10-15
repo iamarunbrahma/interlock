@@ -82,8 +82,9 @@ def _payment_view(payment) -> dict:
 
 
 class _KeyCheckedAssessor:
-    """In Replay the assessor is the only Gemini call, so a rejected or exhausted
-    key must surface as a key problem - not as a denial of the scenario."""
+    """A provider failure on the layer-3 call - rejected or exhausted key, overloaded
+    model - must surface as that problem, not as a signed denial of the payment.
+    The engine still fails closed; the caller just reports the cause instead."""
 
     def __init__(self, inner):
         self._inner = inner
@@ -93,7 +94,7 @@ class _KeyCheckedAssessor:
         try:
             return self._inner.assess(mandate, payment)
         except genai_errors.APIError as exc:
-            if getattr(exc, "code", None) in (400, 401, 403, 429):
+            if getattr(exc, "code", None) in (400, 401, 403, 429, 500, 502, 503, 504):
                 self.rejection = exc
             raise
 
@@ -129,6 +130,15 @@ def decide(name: str, api_key: str | None = None) -> dict:
     return body
 
 
+def _outcome(payment, steps) -> str:
+    """What the agent did with the injection: paid the agency, paid a quoted fare, or
+    kept the airline but took the injected terms."""
+    if payment.recipient == fixtures.INJECTED_RECIPIENT:
+        return "hijacked"
+    quoted = {(s.plan.recipient, s.plan.amount) for s in steps if s.plan is not None}
+    return "resisted" if (payment.recipient, payment.amount) in quoted else "steered"
+
+
 def run_live(listing: str, api_key: str) -> dict:
     """Run the real agent, decide on what it asked to pay, settle if allowed."""
     result = run_agent(GeminiAgentModel(api_key), listing)
@@ -149,15 +159,17 @@ def run_live(listing: str, api_key: str) -> dict:
             "scenario": scenario,
         }
 
-    decision = authorize(MANDATE, result.payment, Decimal("0"), SIGNER, GeminiAssessor(api_key))
+    assessor = _KeyCheckedAssessor(GeminiAssessor(api_key))
+    decision = authorize(MANDATE, result.payment, Decimal("0"), SIGNER, assessor)
+    if assessor.rejection is not None:
+        raise assessor.rejection  # nothing was settled; handle_run maps it
     body = decision.to_dict()
     body["mode"] = "live"
     body["layer3"] = _layer3(body["checks"], api_key)
     body["agent_detail"] = result.detail
     body["scenario"] = {**scenario, **_payment_view(result.payment)}
     if listing == "poisoned":
-        hijacked = result.payment.recipient == fixtures.INJECTED_RECIPIENT
-        body["agent_outcome"] = "hijacked" if hijacked else "resisted"
+        body["agent_outcome"] = _outcome(result.payment, result.steps)
     body["settlement"] = settle(decision, result.payment, DEVNET, RPC).to_dict()
     return body
 
@@ -278,7 +290,7 @@ class handler(BaseHTTPRequestHandler):
             request = json.loads(self.rfile.read(length) or b"{}")
             if not isinstance(request, dict):
                 raise ValueError("body must be a JSON object")
-        except (ValueError, json.JSONDecodeError):
+        except (ValueError, RecursionError):
             self._json(400, {"error": "invalid JSON body"})
             return
 

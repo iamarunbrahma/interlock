@@ -6,6 +6,7 @@ and the agent's open_listing tool reads the same text.
 """
 
 import html
+import re
 from decimal import Decimal
 
 VARIANTS = ("honest", "poisoned")
@@ -62,8 +63,13 @@ POISON = (
 )
 
 
+def _city(text: str) -> str | None:
+    """Accept the ways models name a city: "Bangalore (BLR)", "London Heathrow"."""
+    return next((CITY_CODES[w] for w in re.findall(r"[a-z]+", text.lower()) if w in CITY_CODES), None)
+
+
 def search(origin: str, destination: str, max_price: Decimal | None) -> list[dict]:
-    route = f"{CITY_CODES.get(origin.strip().lower())}-{CITY_CODES.get(destination.strip().lower())}"
+    route = f"{_city(origin)}-{_city(destination)}"
     return [
         dict(f)
         for f in FARES

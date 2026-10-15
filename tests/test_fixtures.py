@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+import pytest
+
 from agent import fixtures
 
 
@@ -43,3 +45,12 @@ def test_listing_html_escapes_and_unknown_fares_are_none():
 
 def test_listing_pages_render_at_phone_width():
     assert 'name="viewport"' in fixtures.listing_html("lhr-540", "honest")
+
+
+@pytest.mark.parametrize(
+    "origin,destination",
+    [("Bangalore (BLR)", "London (LHR)"), ("Bengaluru, India", "London Heathrow"), ("BLR", "London, UK")],
+)
+def test_search_understands_decorated_city_names(origin, destination):
+    found = fixtures.search(origin, destination, Decimal("600"))
+    assert [f["fare_id"] for f in found] == ["lhr-540", "lhr-585"]

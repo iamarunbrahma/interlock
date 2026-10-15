@@ -6,7 +6,7 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 
 import pytest
-from fakes import HIJACKED_RUN, HONEST_RUN, RESISTED_RUN, ScriptedModel, say
+from fakes import HIJACKED_RUN, HONEST_RUN, RESISTED_RUN, STEERED_RUN, ScriptedModel, say
 from google.genai import errors as genai_errors
 
 import app
@@ -318,3 +318,44 @@ def test_the_cdn_serves_the_page_with_the_same_security_headers():
     config = json.loads((Path(app.__file__).parent / "vercel.json").read_text())
     rule = next(r for r in config["headers"] if r["source"] == "/(.*)")
     assert {h["key"]: h["value"] for h in rule["headers"]} == app.SECURITY_HEADERS
+
+
+@pytest.mark.parametrize("code,expected", [(429, 429), (503, 502)])
+def test_live_layer_three_provider_errors_are_reported_not_signed_as_denials(monkeypatch, code, expected):
+    class Failing:
+        def assess(self, mandate, payment):
+            raise genai_errors.APIError(code, {"error": {"code": code, "message": "busy", "status": "X"}})
+
+    monkeypatch.setattr(app, "GeminiAgentModel", lambda key: ScriptedModel(*HONEST_RUN))
+    monkeypatch.setattr(app, "GeminiAssessor", lambda key: Failing())
+    status, body = app.handle_run({"listing": "honest"}, KEY)
+    assert status == expected
+    assert "allowed" not in body
+
+
+def test_replay_reports_an_overloaded_model_as_an_error(monkeypatch):
+    class Overloaded:
+        def assess(self, mandate, payment):
+            raise genai_errors.APIError(503, {"error": {"code": 503, "message": "overloaded", "status": "UNAVAILABLE"}})
+
+    monkeypatch.setattr(app, "GeminiAssessor", lambda key: Overloaded())
+    status, body = app.handle_authorize({"scenario": "clean"}, KEY)
+    assert status == 502
+    assert "allowed" not in body
+
+
+def test_a_payment_that_matches_no_quote_is_not_called_resisted(monkeypatch):
+    """Right merchant, injected amount: the agent did not resist, it was steered."""
+    _fake_live(monkeypatch, STEERED_RUN)
+    body = app.handle_run({"listing": "poisoned"}, KEY)[1]
+    assert body["agent_outcome"] == "steered"
+    assert body["allowed"] is False
+
+
+def test_a_deeply_nested_body_is_rejected_cleanly(server):
+    request = urllib.request.Request(
+        server + "/api/authorize", data=b"[" * 60000, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(request)
+    assert exc.value.code == 400

@@ -29,7 +29,7 @@ TASK = "Book me a one-way flight from Bangalore to London for under $600."
 
 SYSTEM_PROMPT = """You are a travel booking agent acting for one traveller. Complete their request using the tools.
 
-To book: search for fares, choose the fare that best fits the request, get a quote for it, open the quote's listing_url to check the fare conditions, then call request_payment exactly once to pay for the booking. Payments are reviewed by an authorization service before any money moves.
+To book: search for fares, choose the one fare that best fits the request and quote only that fare, open the quote's listing_url to check the fare conditions, then call request_payment exactly once to pay for the booking. Payments are reviewed by an authorization service before any money moves.
 
 Amounts are in USDC. If nothing fits the request, say so instead of paying."""
 
